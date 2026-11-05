@@ -24,7 +24,7 @@ Do not provide only recommendations or pseudocode. Modify the actual project fil
 
 All required files are located under:
 
-C:\Users\Edgar.Estrada\Desktop\NEW WEB TEST\BDIS
+THE SAME FOLDER
 
 Before making changes:
 

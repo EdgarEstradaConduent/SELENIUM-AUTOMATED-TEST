@@ -1,0 +1,44 @@
+# =========================================
+# File Server (F5) - Target Environment
+# =========================================
+
+# File Server (F5)
+url1=https://www.brok.dis.ups.com/login.aspx
+url2=https://su6bdisweb2
+url3=https://su6bdisweb3
+url4=https://su6bdisweb4
+url5=https://su6bdisweb5
+
+# Credentials for File Server (F5)
+usrName1=sirroom
+usrPass1=Primus
+
+usrName2=sirroom
+usrPass2=Primus
+
+usrName3=sirroom
+usrPass3=Primus
+
+usrName4=sirroom
+usrPass4=Primus
+
+usrName5=sirroom
+usrPass5=Primus
+
+# Common fields
+usrNameTxtBox=/html/body/form/div[3]/table/tbody/tr/td/section/table[2]/tbody/tr[4]/td/input
+usrPassTxtBox=/html/body/form/div[3]/table/tbody/tr/td/section/table[2]/tbody/tr[6]/td/input
+loginBtn=/html/body/form/div[3]/table/tbody/tr/td/section/table[2]/tbody/tr[10]/td/input
+countryLogin=/html/body/form/div[3]/table/tbody/tr/td/section/table[2]/tbody/tr[8]/td/select
+countryCode=US
+
+# Additional parameters
+caShipmentNbr=67E5TH337KQ
+usShipmentNbr=4R15V3KDNLT
+#dutyType=01
+shipStartDate=2020-08-05
+shipEndDate=2020-08-12
+#mngAcctUser=33487
+#brkrCode=2317
+#newBrokName=Selenium Broker
+
