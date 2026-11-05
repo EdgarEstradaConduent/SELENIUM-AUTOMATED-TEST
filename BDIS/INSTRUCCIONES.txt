@@ -1,0 +1,912 @@
+# BDIS Selenium Automation Refactoring Requirements
+
+## 1. Objective
+
+Refactor and modernize the existing `BDIS-SELENIUM.Linq` automation script while preserving its current test-result evaluation logic.
+
+The updated solution must:
+
+1. Be written entirely in English.
+2. Include detailed, accurate, step-by-step comments in English.
+3. Use a clean, modular, maintainable, and professional C# structure.
+4. Continue running in LINQPad 8.
+5. Use Microsoft Edge exclusively.
+6. Read environment-specific values from `Config.properties`.
+7. Replace the current Selenium test cases with the test flow defined in `BDIS.side`.
+8. Test both Canada and United States workflows.
+9. Preserve compatibility with the existing Power Automate webhook and Adaptive Card integration unless a schema change is technically required.
+
+Do not provide only recommendations or pseudocode. Modify the actual project files and deliver complete, executable code.
+
+---
+
+## 2. Project Location
+
+All required files are located under:
+
+C:\Users\Edgar.Estrada\Desktop\NEW WEB TEST\BDIS
+
+Before making changes:
+
+1. Inspect the complete directory structure.
+2. Identify the main LINQPad script, configuration file, Selenium IDE file, image file, supporting libraries, and any existing logging or reporting components.
+3. Review the following files as the primary sources for the refactoring:
+   - `Config.properties`
+   - `BDIS.side`
+   - `BDISImg\Image.tif`
+4. Reuse existing stable logic where appropriate.
+5. Do not invent XPath selectors, field names, configuration values, or workflow steps when they are available in the existing files.
+
+---
+
+## 3. Coding Standards
+
+All source code, identifiers, comments, messages, method names, class names, variable names, logs, and user interface text must be written in English.
+
+The code must follow these standards:
+
+- Use descriptive PascalCase names for classes, methods, and properties.
+- Use descriptive camelCase names for local variables and parameters.
+- Avoid duplicated code.
+- Separate configuration loading, browser initialization, login, country selection, test execution, result evaluation, logging, Power Automate reporting, and error handling into dedicated methods or classes.
+- Use explicit exception handling for recoverable and non-recoverable failures.
+- Add precise comments explaining why each major step is required.
+- Avoid comments that simply repeat the code.
+- Never log usernames or passwords.
+- Dispose of `EdgeDriver` and other disposable resources correctly.
+- Use explicit Selenium waits instead of unnecessary fixed delays.
+- When a fixed delay is unavoidable, document why it is required.
+- Preserve the existing test pass/fail evaluation behavior.
+- Preserve the current execution-reporting behavior unless a change is necessary for the new country-level test structure.
+
+Recommended logical components include:
+
+- `ConfigurationManager`
+- `TestExecutionMode`
+- `CountryTestProfile`
+- `EdgeDriverManager`
+- `BdisLoginService`
+- `CountrySelectionService`
+- `BdisTestRunner`
+- `TestResult`
+- `PowerAutomateReporter`
+- `ExecutionLogger`
+
+Equivalent names are acceptable if the resulting structure is clear and maintainable.
+
+---
+
+## 4. Configuration Refactoring
+
+The current script depends on several values in `Config.properties` that are not useful for the new test design.
+
+Review and remove these values if they are no longer referenced:
+
+#dutyType=01
+shipStartDate=2020-08-05
+shipEndDate=2020-08-12
+#mngAcctUser=33487
+#brkrCode=2317
+#newBrokName=Selenium Broker
+
+Before removing any property:
+
+1. Search the entire project for references.
+2. Confirm that it is no longer required by the new `BDIS.side` workflow.
+3. Remove obsolete code that depends on the property.
+4. Document the removal in the change summary.
+
+Do not leave unused configuration variables or dead code.
+
+---
+
+## 5. URL Configuration
+
+The solution currently contains five target URLs:
+
+url1=https://www.brok.dis.ups.com/login.aspx
+url2=https://su6bdisweb2
+url3=https://su6bdisweb3
+url4=https://su6bdisweb4
+url5=https://su6bdisweb5
+
+Retain these URLs in `Config.properties`, but improve their naming if possible.
+
+Preferred configuration:
+
+f5Url=https://www.brok.dis.ups.com/login.aspx
+webServerUrl2=https://su6bdisweb2
+webServerUrl3=https://su6bdisweb3
+webServerUrl4=https://su6bdisweb4
+webServerUrl5=https://su6bdisweb5
+
+If the existing `url1` through `url5` names must be preserved for backward compatibility, centralize their mapping in one place in the code.
+
+Do not hardcode the URLs inside `BDIS-SELENIUM.Linq`.
+
+---
+
+## 6. Universal Credentials
+
+Remove the duplicated username and password properties:
+
+usrName1
+usrPass1
+usrName2
+usrPass2
+usrName3
+usrPass3
+usrName4
+usrPass4
+usrName5
+usrPass5
+
+Replace them with one universal credential pair:
+
+username=
+password=
+
+The real credentials will be entered directly in `Config.properties`. Do not place real credentials in the LINQPad script, logs, HTML reports, source comments, screenshots, exception messages, or Power Automate payloads.
+
+The same credentials must be used for all configured URLs unless the configuration file explicitly defines a different authentication model in the future.
+
+Validate at startup that both properties exist and are not empty. If either value is missing, stop execution and display a clear error message without exposing the value of either property.
+
+---
+
+## 7. Test Execution Mode Selection
+
+At startup, the script must ask the user what type of test should be executed.
+
+Provide two options:
+
+1. `F5 / File Server Test`
+2. `Full Test`
+
+### F5 / File Server Test
+
+If the user selects `F5 / File Server Test`:
+
+- Execute the complete Canada and United States test sequence only against `url1` or `f5Url`.
+- Do not test `url2` through `url5`.
+
+### Full Test
+
+If the user selects `Full Test`:
+
+- Execute the complete Canada and United States test sequence against all configured targets:
+  - `url1`
+  - `url2`
+  - `url3`
+  - `url4`
+  - `url5`
+
+### Selection Dialog Requirements
+
+The selection interface must:
+
+- Clearly identify both available modes.
+- Include a Cancel or Close option.
+- Stop the script safely if the user cancels.
+- Validate that a supported mode was selected.
+- Write the selected mode to the execution log.
+- Never log credentials.
+
+Use an enum instead of raw strings, for example:
+
+TestExecutionMode.F5Only
+TestExecutionMode.FullTest
+
+---
+
+## 8. Microsoft Edge WebDriver Startup Validation
+
+The script must use Microsoft Edge and Selenium EdgeDriver exclusively.
+
+During browser initialization, detect failures caused by:
+
+- Missing `msedgedriver.exe`
+- An invalid driver path
+- Edge and EdgeDriver version incompatibility
+- An outdated EdgeDriver
+- A corrupted driver executable
+- A driver process that cannot start
+- Permission or access errors affecting `C:\Selenium`
+- Other `WebDriverException` errors that prevent Microsoft Edge from starting
+
+If EdgeDriver initialization fails:
+
+1. Stop the entire test execution immediately.
+2. Do not mark individual web environments as failed because no functional test started.
+3. Dispose of any partially initialized browser or driver process.
+4. Write the complete technical error to the local log.
+5. Do not expose credentials or sensitive configuration values.
+6. Display a non-expiring popup window.
+7. Open Microsoft Edge using the official Edge WebDriver download page:
+
+https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver?form=MA13LH&ch=1&cs=3487937218
+
+The popup must remain visible until the user presses a `Close` button. It must not close automatically and must not have a timeout.
+
+### Required Popup Information
+
+The popup must explain:
+
+- Microsoft Edge WebDriver could not be initialized.
+- The installed EdgeDriver may not match the installed Microsoft Edge version.
+- How to check the installed Microsoft Edge version:
+  1. Open Microsoft Edge.
+  2. Navigate to `edge://settings/help`.
+  3. Record the complete version number.
+- How to check the current EdgeDriver version:
+  1. Open Command Prompt.
+  2. Run:
+     `C:\Selenium\msedgedriver.exe --version`
+- The major version of Microsoft Edge and EdgeDriver must match.
+- The correct driver must be downloaded from the official Microsoft page.
+- The existing driver must be replaced in:
+  `C:\Selenium`
+- Microsoft Edge and all existing `msedgedriver.exe` processes should be closed before replacing the executable.
+- The script must be restarted after the driver is updated.
+
+The popup should also display the original initialization error in a technical-details section when it is safe to do so.
+
+Use `Process.Start` safely to open the URL in Microsoft Edge. If Edge cannot be started explicitly, fall back to opening the URL through the operating system's default HTTPS handler.
+
+---
+
+## 9. Removal of Existing Tests
+
+Remove the current implementation of these test cases:
+
+- Login
+- DocumentQuery
+- WebStatus
+- PacketPrint
+- DocType
+- UploadDocument
+- AccountManagement
+- ManipulateImage
+
+These tests must not remain as active legacy methods after the refactoring.
+
+However, preserve reusable and still-valid infrastructure, including:
+
+- Test pass/fail evaluation
+- Timing calculation
+- Error capture
+- Screenshot capture, if currently implemented
+- Log generation
+- HTML report generation, if currently implemented
+- Environment-level status reporting
+- Global execution status calculation
+- Power Automate payload generation
+
+Replace the removed workflows with the corresponding functionality defined in `BDIS.side`.
+
+---
+
+## 10. BDIS.side as the Functional Source of Truth
+
+Use `BDIS.side` as the primary source of truth for:
+
+- Test order
+- Navigation flow
+- XPath selectors
+- Element IDs
+- User interactions
+- Expected values
+- Validation steps
+- Country-specific behavior
+
+Use the existing `BDIS-SELENIUM.Linq` script as a secondary reference for:
+
+- Login XPath selectors
+- Selenium helper methods
+- Test evaluation logic
+- Logging
+- Reporting
+- Exception handling
+- Power Automate integration
+
+When the LINQPad script and `BDIS.side` differ:
+
+1. Prefer `BDIS.side` for the functional workflow.
+2. Prefer the existing LINQPad script for stable infrastructure and reporting behavior.
+3. Document any material conflict and the selected implementation.
+4. Do not silently omit a Selenium IDE step.
+
+---
+
+## 11. Country-Based Test Architecture
+
+The automation must execute the workflow for two countries:
+
+1. Canada
+2. United States
+
+Most test steps are expected to be identical. Avoid duplicating the entire workflow.
+
+Create a reusable country-driven test structure. For example:
+
+CountryTestProfile
+- Country
+- ShipmentNumber
+- PacketPrintShipmentNumber
+- Additional country-specific selectors or values
+
+Suggested country enum:
+
+BdisCountry.Canada
+BdisCountry.UnitedStates
+
+The preferred execution model is:
+
+1. Log in to the target environment.
+2. Select the country required by the current test profile.
+3. Execute the complete workflow for that country.
+4. Record the result.
+5. Return to a stable application state.
+6. Select the next country.
+7. Execute the same reusable workflow with the next country's parameters.
+
+If the application requires a new login between countries, implement that behavior and explain why it is necessary.
+
+Do not assume that changing the country is successful. Validate the country selection by checking a reliable page element, selected value, label, or country-specific application state.
+
+---
+
+## 12. Country-Specific Configuration Parameters
+
+Add the following required properties to `Config.properties`:
+
+caShipmentNbr=
+usShipmentNbr=
+caShipmentNbrPK=
+usShipmentNbrPK=
+
+Usage requirements:
+
+### Canada
+
+- `DocumentQuery` must use `caShipmentNbr`.
+- `PacketPrint` must use `caShipmentNbrPK`.
+
+### United States
+
+- `DocumentQuery` must use `usShipmentNbr`.
+- `PacketPrint` must use `usShipmentNbrPK`.
+
+Load these values once during startup and validate them before opening the browser.
+
+If a required value is missing:
+
+1. Stop execution before functional testing begins.
+2. Display a clear configuration error.
+3. Identify the missing property name.
+4. Do not display credentials or other sensitive values.
+
+Do not hardcode shipment numbers in the script.
+
+---
+
+## 13. Required Test Order
+
+For every selected target URL, execute the country workflows in this order:
+
+1. Canada
+2. United States
+
+Within each country, preserve the execution order defined in `BDIS.side`.
+
+The expected high-level structure is:
+
+1. Open the target URL.
+2. Authenticate using the universal credentials.
+3. Select Canada.
+4. Execute the Canada workflow from `BDIS.side`.
+5. Use `caShipmentNbr` for Document Query.
+6. Use `caShipmentNbrPK` for Packet Print.
+7. Complete the Canada Manipulate Image workflow.
+8. Record the Canada result.
+9. Return to a stable state or re-authenticate if required.
+10. Select United States.
+11. Execute the United States workflow from `BDIS.side`.
+12. Use `usShipmentNbr` for Document Query.
+13. Use `usShipmentNbrPK` for Packet Print.
+14. Complete the United States Manipulate Image workflow.
+15. Record the United States result.
+16. Calculate the overall result for the target URL.
+
+A target URL passes only if all required Canada and United States steps pass.
+
+The global execution passes only if every selected target URL passes.
+
+If the current reporting contract only supports one result per environment, aggregate the country results into the environment result and include country-level failures in the `error` field. If the contract can safely support country-level result rows without breaking Power Automate, propose the required schema update before implementing it.
+
+---
+
+## 14. Login and Country Selection
+
+Reuse valid login XPath selectors from the existing `.Linq` file where possible.
+
+The login implementation must:
+
+- Use the universal `username` and `password`.
+- Support all five target URLs.
+- Use explicit waits.
+- Validate successful authentication.
+- Detect invalid credentials.
+- Detect unavailable login controls.
+- Capture meaningful errors.
+- Avoid logging credentials.
+- Avoid duplicating login code between Canada and United States.
+
+After login, the script must select the country associated with the active `CountryTestProfile`.
+
+The country-selection logic must:
+
+- Support Canada.
+- Support United States.
+- Confirm that the requested country was selected.
+- Fail the current country workflow if the selection cannot be confirmed.
+- Record the country name in logs and errors.
+
+---
+
+## 15. Manipulate Image File Upload
+
+The Canada and United States Manipulate Image workflows must upload:
+
+C:\Selenium\BDISWEB-SANDY\BDISImg\Image.tif
+
+Before starting browser tests, validate that the file exists.
+
+If the file is missing:
+
+1. Stop execution before functional testing begins.
+2. Display the full expected path.
+3. Record the missing-file error.
+4. Do not continue to the Manipulate Image step.
+
+### Upload Implementation
+
+The application may visually open a Windows File Explorer dialog. However, the preferred Selenium implementation is to locate the HTML `<input type="file">` element and send the complete file path directly:
+
+C:\Selenium\BDISWEB-SANDY\BDISImg\Image.tif
+
+Avoid automating the native Windows File Explorer dialog with mouse coordinates, keyboard timing, or fragile UI automation unless the application does not expose an accessible file input.
+
+The implementation must:
+
+1. Locate the file input associated with the upload control.
+2. Confirm that the file exists.
+3. Send the absolute path using Selenium.
+4. Wait for the upload to complete.
+5. Validate the successful upload using the application response.
+6. Continue through the remaining `BDIS.side` Manipulate Image steps.
+7. Capture a precise failure message if the upload is rejected or times out.
+
+Run this process independently for:
+
+- Canada
+- United States
+
+Do not assume that success in Canada means the United States upload can be skipped.
+
+---
+
+## 16. Wait Strategy and Reliability
+
+Replace unnecessary `Thread.Sleep` calls with explicit Selenium waits based on:
+
+- Element visibility
+- Element clickability
+- URL changes
+- Page state
+- Upload completion
+- Confirmation messages
+- Document-query results
+- Packet-print results
+- Country-selection confirmation
+
+Use bounded timeouts for individual browser operations. The requirement for a popup with no timeout does not mean Selenium operations should wait forever.
+
+Each Selenium step must fail with a descriptive technical error when its expected condition is not met within the configured timeout.
+
+Recommended configuration properties:
+
+elementTimeoutSeconds=30
+pageLoadTimeoutSeconds=60
+uploadTimeoutSeconds=120
+
+Use reasonable defaults if these properties are absent, and document those defaults.
+
+---
+
+## 17. Test Result Model
+
+Preserve the existing pass/fail evaluation semantics.
+
+Each environment result must continue to include:
+
+- `webKey`
+- `targetUrl`
+- `status`
+- `startTime`
+- `endTime`
+- `error`
+
+Recommended status values:
+
+- `PASSED`
+- `FAILED`
+- `NOT_EXECUTED`
+
+Use `NOT_EXECUTED` only when a test could not begin because of a global prerequisite failure, such as:
+
+- Missing configuration
+- Missing image file
+- EdgeDriver initialization failure
+- User cancellation
+
+If the existing Power Automate flow only accepts `PASSED` and `FAILED`, do not introduce `NOT_EXECUTED` without updating and validating the flow schema and Adaptive Card logic.
+
+The `error` field must:
+
+- Be an empty string when the test passes.
+- Include the country and failed step when the test fails.
+- Exclude credentials and sensitive data.
+- Be concise enough for the Adaptive Card while preserving full technical details in the local log.
+
+Example:
+
+Country: Canada | Step: Manipulate Image | Error: Image upload confirmation was not displayed within 120 seconds.
+
+---
+
+## 18. Local Logging and Reporting
+
+Maintain or improve the existing log and HTML report functionality.
+
+The logs should include:
+
+- Execution mode
+- Test name
+- Current Windows user
+- Script start and end times
+- Target URL
+- Country
+- Test step
+- Step start and end times
+- Step status
+- Exception type
+- Sanitized exception message
+- Screenshot path, when applicable
+- Final environment result
+- Final global result
+
+Never log:
+
+- Passwords
+- Password fields
+- Authentication cookies
+- Session tokens
+- Authorization headers
+- Complete webhook secrets
+- Sensitive URL query parameters
+
+---
+
+## 19. Power Automate Integration
+
+The existing Power Automate flow is shared by multiple Selenium web tests. Preserve backward compatibility wherever possible.
+
+The current flow is:
+
+1. Webhook request received
+2. Parse JSON
+3. Initialize an array variable
+4. Apply to each item from the Parse JSON body
+5. Build the `FilasTarjetas` array
+6. Post an Adaptive Card in a Microsoft Teams chat or channel
+
+### Current Parse JSON Schema
+
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "webKey": {
+        "type": "string"
+      },
+      "targetUrl": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "startTime": {
+        "type": "string"
+      },
+      "endTime": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "webKey",
+      "targetUrl",
+      "status",
+      "startTime",
+      "endTime",
+      "error"
+    ]
+  }
+}
+
+### Required Compatibility Assessment
+
+Determine whether the existing Power Automate schema can remain unchanged.
+
+The preferred approach is to keep it unchanged because:
+
+- It is already used by multiple Selenium tests.
+- It represents one status object per target environment.
+- Canada and United States results can be aggregated into a single environment result.
+- Country-specific failure details can be included in the `error` field and local report.
+
+Under this preferred design:
+
+- `webKey` identifies the environment.
+- `targetUrl` contains the tested URL.
+- `status` is `PASSED` only if both Canada and United States pass.
+- `startTime` is the beginning of that environment's execution.
+- `endTime` is the completion of both country workflows.
+- `error` contains one or more sanitized country-specific errors when the environment fails.
+
+Do not change the shared Parse JSON schema unless country-level rows are an explicit reporting requirement that cannot be represented safely in the existing fields.
+
+### Adaptive Card Assessment
+
+Review the current Adaptive Card and determine whether it can remain unchanged.
+
+The current card uses:
+
+- `testName`
+- `user`
+- `globalStatus`
+- `FilasTarjetas`
+
+The preferred design is to keep the card structure unchanged and populate each environment row using the aggregated result.
+
+If country-level details must be displayed directly in Teams, recommend an optional, backward-compatible enhancement rather than replacing the shared card contract.
+
+Any proposed change must specify:
+
+1. The exact script payload change.
+2. The exact Parse JSON schema change.
+3. The exact `FilasTarjetas` change.
+4. The exact Adaptive Card change.
+5. The compatibility impact on other Selenium tests.
+6. A rollback approach.
+
+Do not modify the webhook contract without explaining and validating the downstream impact.
+
+---
+
+## 20. Power Automate Payload Requirements
+
+The script must continue sending a JSON array compatible with the current Parse JSON schema.
+
+Example:
+
+[
+  {
+    "webKey": "F5",
+    "targetUrl": "https://www.brok.dis.ups.com/login.aspx",
+    "status": "PASSED",
+    "startTime": "2026-11-04T17:00:00-06:00",
+    "endTime": "2026-11-04T17:08:30-06:00",
+    "error": ""
+  }
+]
+
+If a country workflow fails, use an aggregated environment result:
+
+[
+  {
+    "webKey": "F5",
+    "targetUrl": "https://www.brok.dis.ups.com/login.aspx",
+    "status": "FAILED",
+    "startTime": "2026-11-04T17:00:00-06:00",
+    "endTime": "2026-11-04T17:08:30-06:00",
+    "error": "Canada: PASSED | United States: FAILED at Manipulate Image because the upload confirmation was not displayed."
+  }
+]
+
+Use ISO 8601 date and time values consistently.
+
+Verify the existing request envelope. The Adaptive Card references `testName`, `user`, and `globalStatus` from `triggerBody()`, while the Parse JSON action expects an array. Confirm whether the webhook currently receives:
+
+1. A top-level object containing execution metadata and a nested results array, or
+2. A raw result array with metadata supplied separately.
+
+Preserve the actual working request structure. If there is an inconsistency between the script payload and the Power Automate actions, document it and implement the smallest backward-compatible correction.
+
+---
+
+## 21. Failure Handling
+
+Apply the following failure rules:
+
+### Global Prerequisite Failure
+
+Examples:
+
+- Invalid configuration
+- Missing username or password
+- Missing shipment parameters
+- Missing image file
+- EdgeDriver startup failure
+- User cancellation
+
+Required behavior:
+
+- Stop all execution.
+- Do not continue to other URLs.
+- Dispose of acquired resources.
+- Display a clear user-facing message.
+- Record the technical details locally.
+- Send a Power Automate notification only if the existing architecture supports reporting prerequisite failures safely.
+
+### Environment Failure
+
+Examples:
+
+- A URL is unavailable.
+- Login fails on one environment.
+- A country workflow fails.
+- A required page element is missing.
+
+Required behavior:
+
+- Mark that environment as failed.
+- Capture the target URL, country, step, and sanitized error.
+- Continue to the next environment during a Full Test, unless continuing would be unsafe or impossible.
+- Calculate the global result after all selected environments are processed.
+
+### Step Failure
+
+Required behavior:
+
+- Stop the remaining steps for the affected country.
+- Record the country result as failed.
+- Determine whether the next country can safely run.
+- If necessary, restart the browser session before the next country.
+- Do not report a false pass for partially executed workflows.
+
+---
+
+## 22. Resource Cleanup
+
+The script must always clean up resources, including when an exception occurs.
+
+Ensure that:
+
+- `EdgeDriver.Quit()` is attempted.
+- `EdgeDriver.Dispose()` is called.
+- Orphaned driver processes are not intentionally left running.
+- Log writers are flushed and disposed.
+- HTTP clients are reused or disposed correctly.
+- Temporary screenshots and artifacts have predictable names.
+- Cleanup errors do not hide the original test failure.
+
+Use `try`, `catch`, and `finally` blocks appropriately.
+
+---
+
+## 23. Required Deliverables
+
+Provide all of the following:
+
+1. The complete updated `BDIS-SELENIUM.Linq` file.
+2. The updated `Config.properties` template.
+3. Any supporting C# files required by the LINQPad solution.
+4. A mapping from each `BDIS.side` command to the corresponding C# implementation.
+5. A list of removed legacy tests and obsolete configuration properties.
+6. A summary of the new class and method structure.
+7. A Power Automate compatibility assessment.
+8. The final JSON payload format.
+9. Any required Adaptive Card changes, or a clear confirmation that no changes are required.
+10. A manual validation checklist.
+11. A short rollback procedure.
+12. A list of assumptions or unresolved selectors that could not be verified from the available files.
+
+Do not return partial code fragments when a complete file can be provided.
+
+---
+
+## 24. Validation Checklist
+
+Before considering the work complete, validate all of the following:
+
+### Configuration
+
+- The script reads all required values from `Config.properties`.
+- Only one username and one password are used.
+- No credentials are hardcoded.
+- Canada and United States shipment parameters are present.
+- All selected URLs are validated.
+- The image file path exists.
+
+### Execution Modes
+
+- F5 mode runs only against `url1` or `f5Url`.
+- Full Test mode runs against all five URLs.
+- User cancellation exits safely.
+
+### EdgeDriver
+
+- A compatible EdgeDriver starts successfully.
+- A missing driver produces the required popup.
+- A version mismatch produces the required popup.
+- The official EdgeDriver page opens in Microsoft Edge.
+- The popup has no automatic timeout.
+- The popup closes only when the user presses Close.
+
+### Country Workflows
+
+- Canada runs first.
+- United States runs second.
+- The correct country is selected and validated.
+- Canada Document Query uses `caShipmentNbr`.
+- United States Document Query uses `usShipmentNbr`.
+- Canada Packet Print uses `caShipmentNbrPK`.
+- United States Packet Print uses `usShipmentNbrPK`.
+- Manipulate Image uploads the required `.tif` file for both countries.
+- Each country result is recorded accurately.
+
+### Reporting
+
+- Each selected environment produces one compatible result object.
+- Environment status is passed only when both countries pass.
+- Global status is passed only when all selected environments pass.
+- Errors identify the country and failed step.
+- Power Automate accepts the payload.
+- The Adaptive Card renders successfully.
+- Other Selenium tests using the shared flow remain unaffected.
+
+### Security
+
+- Passwords never appear in logs.
+- Passwords never appear in exceptions.
+- Credentials never appear in Power Automate.
+- Webhook secrets are not exposed.
+- Sensitive browser information is not included in screenshots or reports unnecessarily.
+
+---
+
+## 25. Acceptance Criteria
+
+The refactoring is accepted only when:
+
+1. The complete solution runs in LINQPad 8.
+2. Microsoft Edge is the only supported browser.
+3. F5 mode tests only the F5 URL.
+4. Full Test mode tests all five configured URLs.
+5. The script uses one universal credential pair.
+6. Obsolete configuration dependencies are removed.
+7. The test workflow is derived from `BDIS.side`.
+8. Canada and United States execute in the required order.
+9. Country-specific shipment parameters are used correctly.
+10. `Image.tif` is uploaded successfully for both countries.
+11. EdgeDriver startup failures stop execution and display the required non-expiring popup.
+12. Pass/fail evaluation remains accurate.
+13. Power Automate remains compatible or all required changes are fully documented.
+14. The code and comments are entirely in English.
+15. The final code is complete, maintainable, and executable.
+16. No credentials or secrets are hardcoded or exposed.
