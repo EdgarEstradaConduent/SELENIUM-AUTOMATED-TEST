@@ -788,7 +788,22 @@ public sealed class SeleniumWaitHelper
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
-            return wait.Until(ExpectedConditions.ElementIsVisible(by));
+            return wait.Until(driver =>
+            {
+                try
+                {
+                    var element = driver.FindElement(by);
+                    return element.Displayed ? element : null;
+                }
+                catch (NoSuchElementException)
+                {
+                    return null;
+                }
+                catch (StaleElementReferenceException)
+                {
+                    return null;
+                }
+            });
         }
         catch (WebDriverTimeoutException exception)
         {
@@ -808,7 +823,22 @@ public sealed class SeleniumWaitHelper
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
-            return wait.Until(ExpectedConditions.ElementToBeClickable(by));
+            return wait.Until(driver =>
+            {
+                try
+                {
+                    var element = driver.FindElement(by);
+                    return element.Displayed && element.Enabled ? element : null;
+                }
+                catch (NoSuchElementException)
+                {
+                    return null;
+                }
+                catch (StaleElementReferenceException)
+                {
+                    return null;
+                }
+            });
         }
         catch (WebDriverTimeoutException exception)
         {
@@ -951,7 +981,17 @@ public sealed class SeleniumWaitHelper
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
-            return wait.Until(ExpectedConditions.AlertIsPresent());
+            return wait.Until(driver =>
+            {
+                try
+                {
+                    return driver.SwitchTo().Alert();
+                }
+                catch (NoAlertPresentException)
+                {
+                    return null;
+                }
+            });
         }
         catch (WebDriverTimeoutException exception)
         {
