@@ -7,6 +7,7 @@
   <Namespace>System.IO</Namespace>
   <Namespace>System.Linq</Namespace>
   <Namespace>System.Net.Http</Namespace>
+  <Namespace>System.Runtime.InteropServices</Namespace>
   <Namespace>System.Text</Namespace>
   <Namespace>System.Text.RegularExpressions</Namespace>
   <Namespace>System.Threading</Namespace>
@@ -226,8 +227,36 @@ public sealed class ConfigurationManager
     public int ElementTimeoutSeconds { get; private set; }
     public int PageLoadTimeoutSeconds { get; private set; }
     public int UploadTimeoutSeconds { get; private set; }
+    public int EmailWarningTimeoutSeconds { get; private set; }
+    public List<string> EmailWarningEnvironments { get; private set; }
     public List<CountryTestProfile> CountryProfiles { get; private set; }
     public SecretRedactor Redactor { get; private set; }
+
+    /// <summary>
+    /// Returns true when a failure of the Document Query email step must be
+    /// treated as a non-fatal warning for the given environment. Every
+    /// environment that is not listed in emailWarningEnvironments stays strict.
+    /// </summary>
+    public bool IsEmailStepOptional(string webKey)
+    {
+        if (string.IsNullOrWhiteSpace(webKey))
+        {
+            return false;
+        }
+
+        return EmailWarningEnvironments.Any(
+            environment => string.Equals(environment, webKey.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Warning environments use a shorter email confirmation wait so a backend
+    /// that cannot send mail does not add a full page-load timeout per country.
+    /// Strict environments keep the regular page-load timeout.
+    /// </summary>
+    public int GetEmailTimeoutSeconds(string webKey)
+    {
+        return IsEmailStepOptional(webKey) ? EmailWarningTimeoutSeconds : PageLoadTimeoutSeconds;
+    }
 
     private ConfigurationManager(Dictionary<string, string> values, string configPath, string baseDirectory)
     {
@@ -310,6 +339,11 @@ public sealed class ConfigurationManager
         PageLoadTimeoutSeconds = GetInt("pageLoadTimeoutSeconds", 60);
         UploadTimeoutSeconds = GetInt("uploadTimeoutSeconds", 120);
 
+        // Email delivery is known to fail on backends served by web2..web4.
+        // The list is configurable; an empty list keeps every environment strict.
+        EmailWarningEnvironments = ParseCsv(GetOptional("emailWarningEnvironments"));
+        EmailWarningTimeoutSeconds = GetInt("emailWarningTimeoutSeconds", PageLoadTimeoutSeconds);
+
         WebhookUrl = GetOptional("powerAutomateWebhookUrl");
 
         ImageFilePath = Path.Combine(BaseDirectory, "BDISImg", "Image.tif");
@@ -378,6 +412,18 @@ public sealed class ConfigurationManager
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Parses a comma-separated list, trims each entry and drops empty values.
+    /// </summary>
+    private static List<string> ParseCsv(string rawValue)
+    {
+        return (rawValue ?? "")
+            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Trim())
+            .Where(value => value.Length > 0)
+            .ToList();
     }
 
     private static Dictionary<string, string> LoadValues(string path)
@@ -474,6 +520,7 @@ public static class HtmlReportGenerator
     {
         var totalSteps = steps?.Count ?? 0;
         var passedSteps = steps?.Count(s => s.Status == "PASSED") ?? 0;
+        var warningSteps = steps?.Count(s => s.Status == "WARNING") ?? 0;
         var statusColor = globalStatus == "PASSED"
             ? "#48BB78"
             : globalStatus == "NOT_EXECUTED" ? "#ECC94B" : "#F56565";
@@ -502,8 +549,9 @@ public static class HtmlReportGenerator
         sb.Append(".badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; text-transform: uppercase; }");
         sb.Append(".badge-success { background-color: #2F855A; color: #C6F6D5; }");
         sb.Append(".badge-danger { background-color: #9B2C2C; color: #FED7D7; }");
-        sb.Append(".badge-warning { background-color: #975A16; color: #FEFCBF; }");
+        sb.Append(".badge-warning { background-color: #975A16; color: #FEFCBF; text-transform: none; }");
         sb.Append("pre { background: #1A202C; padding: 12px; border-radius: 6px; border-left: 4px solid #F56565; white-space: pre-wrap; color: #FEB2B2; font-size: 12px; font-family: 'Courier New', Courier, monospace; margin-top: 8px; }");
+        sb.Append("pre.warning-details { border-left-color: #ECC94B; color: #FEFCBF; }");
         sb.Append(".screenshot-link { display: inline-block; margin-top: 8px; color: #63B3ED; text-decoration: none; font-weight: bold; font-size: 13px; }");
         sb.Append(".screenshot-link:hover { text-decoration: underline; color: #4299E1; }");
         sb.Append("</style></head><body>");
@@ -533,6 +581,12 @@ public static class HtmlReportGenerator
         sb.Append(" / ");
         sb.Append(totalSteps);
         sb.Append(" Steps Passed");
+        if (warningSteps > 0)
+        {
+            sb.Append(" (");
+            sb.Append(warningSteps);
+            sb.Append(warningSteps == 1 ? " warning)" : " warnings)");
+        }
         sb.Append("</div></div>");
         sb.Append("</div>");
 
@@ -544,11 +598,13 @@ public static class HtmlReportGenerator
             for (var i = 0; i < steps.Count; i++)
             {
                 var step = steps[i];
+                var isWarning = step.Status == "WARNING";
                 var badgeClass = step.Status == "PASSED"
                     ? "badge-success"
-                    : step.Status == "NOT_EXECUTED" ? "badge-warning" : "badge-danger";
+                    : isWarning || step.Status == "NOT_EXECUTED" ? "badge-warning" : "badge-danger";
                 var badgeText = step.Status == "PASSED"
                     ? "PASSED"
+                    : isWarning ? "Warning"
                     : step.Status == "NOT_EXECUTED" ? "NOT EXECUTED" : "ERROR";
 
                 sb.Append("<tr>");
@@ -572,7 +628,7 @@ public static class HtmlReportGenerator
 
                 if (step.Status != "PASSED")
                 {
-                    sb.Append("<pre>");
+                    sb.Append(isWarning ? "<pre class='warning-details'>" : "<pre>");
                     sb.Append(System.Net.WebUtility.HtmlEncode(step.Details ?? ""));
                     sb.Append("</pre>");
 
@@ -580,7 +636,9 @@ public static class HtmlReportGenerator
                     {
                         sb.Append("<br><a class='screenshot-link' href='");
                         sb.Append(System.Net.WebUtility.HtmlEncode(step.ScreenshotPath));
-                        sb.Append("' target='_blank'>View Error Screenshot</a>");
+                        sb.Append("' target='_blank'>");
+                        sb.Append(isWarning ? "View Warning Screenshot" : "View Error Screenshot");
+                        sb.Append("</a>");
                     }
                 }
                 else
@@ -614,6 +672,8 @@ public sealed class PowerAutomateReporter
         _logger = logger;
     }
 
+    private const int MaxAttempts = 3;
+
     public void Send(string testName, string user, List<EnvironmentTestResult> results, string globalStatus)
     {
         if (string.IsNullOrWhiteSpace(_config.WebhookUrl))
@@ -622,63 +682,132 @@ public sealed class PowerAutomateReporter
             return;
         }
 
+        var payload = BuildPayload(testName, user, results, globalStatus);
+
+        // The payload never contains credentials. The redactor is still applied
+        // to the diagnostic copy so no registered secret can leak into the log.
+        var diagnosticPayload = _config.Redactor.Redact(payload);
+
         try
         {
-            var resultsJson = new StringBuilder();
-            resultsJson.Append('[');
-
-            for (var i = 0; i < results.Count; i++)
-            {
-                if (i > 0)
-                {
-                    resultsJson.Append(',');
-                }
-
-                var result = results[i];
-                resultsJson.Append('{');
-                resultsJson.Append($"\"webKey\":\"{JsonHelper.Escape(result.WebKey)}\",");
-                resultsJson.Append($"\"targetUrl\":\"{JsonHelper.Escape(result.TargetUrl)}\",");
-                resultsJson.Append($"\"status\":\"{JsonHelper.Escape(result.Status)}\",");
-                resultsJson.Append($"\"startTime\":\"{result.StartTime.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture)}\",");
-                resultsJson.Append($"\"endTime\":\"{result.EndTime.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture)}\",");
-                resultsJson.Append($"\"error\":\"{JsonHelper.Escape(result.ErrorMessage)}\"");
-                resultsJson.Append('}');
-            }
-
-            resultsJson.Append(']');
-
-            var payload = "{"
-                + $"\"testName\":\"{JsonHelper.Escape(testName)}\","
-                + $"\"user\":\"{JsonHelper.Escape(user)}\","
-                + $"\"globalStatus\":\"{JsonHelper.Escape(globalStatus)}\","
-                + $"\"results\":{resultsJson}"
-                + "}";
-
-            _logger.LogInfo("Sending Power Automate notification.");
-
-            using (var client = new HttpClient())
-            {
-                client.Timeout = TimeSpan.FromSeconds(30);
-
-                using (var content = new StringContent(payload, Encoding.UTF8, "application/json"))
-                using (var response = client.PostAsync(_config.WebhookUrl, content).GetAwaiter().GetResult())
-                {
-                    if (response.IsSuccessStatusCode)
-                    {
-                        _logger.LogInfo($"Power Automate notification sent successfully. Status code: {(int)response.StatusCode}.");
-                    }
-                    else
-                    {
-                        var responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                        _logger.LogInfo($"Power Automate notification failed. Status code: {(int)response.StatusCode}. Response: {responseBody}");
-                    }
-                }
-            }
+            _logger.LogInfo($"Power Automate endpoint host: {new Uri(_config.WebhookUrl).Host}");
+            _logger.LogInfo($"Power Automate payload: {diagnosticPayload}");
+            $"\n[Payload JSON sent to Webhook]:\n{diagnosticPayload}\n".Dump();
         }
         catch (Exception exception)
         {
-            _logger.LogError("Power Automate notification", exception);
+            _logger.LogError("Power Automate payload diagnostics", exception);
         }
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(30);
+
+                    using (var content = new StringContent(payload, Encoding.UTF8, "application/json"))
+                    using (var response = client.PostAsync(_config.WebhookUrl, content).GetAwaiter().GetResult())
+                    {
+                        var statusCode = (int)response.StatusCode;
+                        var responseBody = Truncate(
+                            _config.Redactor.Redact(response.Content.ReadAsStringAsync().GetAwaiter().GetResult()));
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            _logger.LogInfo(
+                                $"Power Automate notification sent successfully (attempt {attempt}/{MaxAttempts}). Status code: {statusCode}. Response: {responseBody}");
+                            return;
+                        }
+
+                        _logger.LogInfo(
+                            $"Power Automate notification failed (attempt {attempt}/{MaxAttempts}). Status code: {statusCode}. Response: {responseBody}");
+
+                        if (!IsTransientStatusCode(statusCode) || attempt == MaxAttempts)
+                        {
+                            return;
+                        }
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError($"Power Automate notification attempt {attempt}/{MaxAttempts}", exception);
+
+                if (attempt == MaxAttempts)
+                {
+                    return;
+                }
+            }
+
+            Thread.Sleep(TimeSpan.FromSeconds(2 * attempt));
+        }
+    }
+
+    private string BuildPayload(
+        string testName,
+        string user,
+        List<EnvironmentTestResult> results,
+        string globalStatus)
+    {
+        var resultsJson = new StringBuilder();
+        resultsJson.Append('[');
+
+        for (var i = 0; i < results.Count; i++)
+        {
+            if (i > 0)
+            {
+                resultsJson.Append(',');
+            }
+
+            var result = results[i];
+            resultsJson.Append('{');
+            resultsJson.Append($"\"webKey\":\"{JsonHelper.Escape(result.WebKey)}\",");
+            resultsJson.Append($"\"targetUrl\":\"{JsonHelper.Escape(result.TargetUrl)}\",");
+            resultsJson.Append($"\"status\":\"{JsonHelper.Escape(result.Status)}\",");
+            resultsJson.Append($"\"startTime\":\"{ToUtcIso(result.StartTime)}\",");
+            resultsJson.Append($"\"endTime\":\"{ToUtcIso(result.EndTime)}\",");
+            resultsJson.Append($"\"error\":\"{JsonHelper.Escape(result.ErrorMessage)}\"");
+            resultsJson.Append('}');
+        }
+
+        resultsJson.Append(']');
+
+        return "{"
+            + $"\"testName\":\"{JsonHelper.Escape(testName)}\","
+            + $"\"user\":\"{JsonHelper.Escape(user)}\","
+            + $"\"globalStatus\":\"{JsonHelper.Escape(globalStatus)}\","
+            + $"\"results\":{resultsJson}"
+            + "}";
+    }
+
+    /// <summary>
+    /// The existing flow calls convertFromUtc on these values, so they must be
+    /// serialized as UTC. A local offset (for example -06:00) makes
+    /// convertFromUtc fail inside Append_to_array_variable.
+    /// </summary>
+    private static string ToUtcIso(DateTimeOffset value)
+    {
+        return value.ToUniversalTime()
+            .ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+    }
+
+    private static bool IsTransientStatusCode(int statusCode)
+    {
+        return statusCode == 429 || (statusCode >= 500 && statusCode <= 599);
+    }
+
+    private static string Truncate(string value, int maxLength = 2000)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "";
+        }
+
+        return value.Length <= maxLength
+            ? value
+            : value.Substring(0, maxLength) + "...";
     }
 }
 
@@ -1180,26 +1309,69 @@ public sealed class BdisWorkflow
         CloseNewWindowAndReturn(driver, wait, existingWindowCount, mainWindowHandle);
     }
 
-    public void DocumentQueryEmail(IWebDriver driver, SeleniumWaitHelper wait)
+    public void DocumentQueryEmail(IWebDriver driver, SeleniumWaitHelper wait, int timeoutSeconds)
     {
-        wait.WaitClickable(By.Id("MainContent_btnEmail")).Click();
+        try
+        {
+            wait.WaitClickable(By.Id("MainContent_btnEmail")).Click();
 
-        var emailToBox = wait.WaitVisible(By.Id("MainContent_txtEmailTo"));
-        emailToBox.Click();
-        emailToBox.Clear();
-        emailToBox.SendKeys(_config.EmailRecipient);
+            var emailToBox = wait.WaitVisible(By.Id("MainContent_txtEmailTo"));
+            emailToBox.Click();
+            emailToBox.Clear();
+            emailToBox.SendKeys(_config.EmailRecipient);
 
-        var emailBodyBox = wait.WaitVisible(By.Id("MainContent_txtEmailBody"));
-        emailBodyBox.Click();
-        emailBodyBox.Clear();
-        emailBodyBox.SendKeys("BDIS TEST");
+            var emailBodyBox = wait.WaitVisible(By.Id("MainContent_txtEmailBody"));
+            emailBodyBox.Click();
+            emailBodyBox.Clear();
+            emailBodyBox.SendKeys("BDIS TEST");
 
-        wait.WaitClickable(By.Id("MainContent_BtnSend")).Click();
-        wait.WaitForPageSourceContains($"E-mail successfully sent to {_config.EmailRecipient}.", _config.PageLoadTimeoutSeconds);
+            wait.WaitClickable(By.Id("MainContent_BtnSend")).Click();
+            wait.WaitForPageSourceContains($"E-mail successfully sent to {_config.EmailRecipient}.", timeoutSeconds);
+        }
+        finally
+        {
+            // Returning to the Document Query page makes the following Packet
+            // Print navigation deterministic for both countries. This also runs
+            // when the confirmation is not displayed so a non-fatal email
+            // warning does not leave the email form open.
+            TryReturnToDocumentQuery(driver);
+        }
+    }
 
-        // Returning to the Document Query page makes the following Packet Print
-        // navigation deterministic for both countries.
-        wait.WaitClickable(By.Id("hlDocumentQuery")).Click();
+    private static void TryReturnToDocumentQuery(IWebDriver driver)
+    {
+        try
+        {
+            // Dismiss a JavaScript alert if the backend raised one.
+            driver.SwitchTo().Alert().Dismiss();
+        }
+        catch
+        {
+            // No alert is open.
+        }
+
+        try
+        {
+            var documentQueryLink = driver.FindElements(By.Id("hlDocumentQuery")).FirstOrDefault();
+            if (documentQueryLink != null && documentQueryLink.Displayed)
+            {
+                documentQueryLink.Click();
+                return;
+            }
+        }
+        catch
+        {
+            // The link may be blocked by a modal or a browser alert.
+        }
+
+        try
+        {
+            driver.Navigate().Refresh();
+        }
+        catch
+        {
+            // Best-effort recovery only. The original email error is preserved.
+        }
     }
 
     public void PacketPrintSelectAndSearch(IWebDriver driver, SeleniumWaitHelper wait, CountryTestProfile profile)
@@ -1542,6 +1714,66 @@ public static class DialogService
     private const string EdgeDriverDownloadUrl =
         "https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver?form=MA13LH&ch=1&cs=3487937218";
 
+    private const int SwRestore = 9;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    /// <summary>
+    /// Forces a WinForms dialog to the foreground. TopMost alone is not reliable
+    /// when the script runs from LINQPad while another application is active.
+    /// </summary>
+    private static void BringToForeground(Form form)
+    {
+        if (form == null || form.IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            var foregroundWindow = GetForegroundWindow();
+            var foregroundThread = GetWindowThreadProcessId(foregroundWindow, out _);
+            var currentThread = GetWindowThreadProcessId(form.Handle, out _);
+
+            var attached = false;
+            if (foregroundThread != 0 && currentThread != 0 && foregroundThread != currentThread)
+            {
+                attached = AttachThreadInput(currentThread, foregroundThread, true);
+            }
+
+            ShowWindow(form.Handle, SwRestore);
+            BringWindowToTop(form.Handle);
+            form.Activate();
+            form.BringToFront();
+            SetForegroundWindow(form.Handle);
+
+            if (attached)
+            {
+                AttachThreadInput(currentThread, foregroundThread, false);
+            }
+        }
+        catch
+        {
+            // Foreground activation is a usability improvement, never fatal.
+        }
+    }
+
     public static TestExecutionMode? SelectExecutionMode()
     {
         return RunOnSta(() =>
@@ -1556,6 +1788,12 @@ public static class DialogService
                 form.MaximizeBox = false;
                 form.MinimizeBox = false;
                 form.TopMost = true;
+                form.ShowInTaskbar = true;
+                form.WindowState = FormWindowState.Normal;
+                form.Shown += (sender, args) =>
+                {
+                    BringToForeground(form);
+                };
 
                 var promptLabel = new Label
                 {
@@ -1616,6 +1854,7 @@ public static class DialogService
                 form.Controls.Add(cancelButton);
                 form.AcceptButton = f5Button;
                 form.CancelButton = cancelButton;
+                form.ActiveControl = f5Button;
 
                 return form.ShowDialog() == DialogResult.OK ? selectedMode : null;
             }
@@ -1638,6 +1877,9 @@ public static class DialogService
                 form.MaximizeBox = false;
                 form.MinimizeBox = false;
                 form.TopMost = true;
+                form.ShowInTaskbar = true;
+                form.WindowState = FormWindowState.Normal;
+                form.Shown += (sender, args) => BringToForeground(form);
 
                 var instructionsLabel = new Label
                 {
@@ -1687,6 +1929,7 @@ public static class DialogService
                 form.Controls.Add(closeButton);
                 form.AcceptButton = closeButton;
                 form.CancelButton = closeButton;
+                form.ActiveControl = closeButton;
 
                 form.ShowDialog();
                 return true;
@@ -1708,6 +1951,9 @@ public static class DialogService
                 form.MaximizeBox = false;
                 form.MinimizeBox = false;
                 form.TopMost = true;
+                form.ShowInTaskbar = true;
+                form.WindowState = FormWindowState.Normal;
+                form.Shown += (sender, args) => BringToForeground(form);
 
                 var messageLabel = new Label
                 {
@@ -1745,6 +1991,7 @@ public static class DialogService
                 form.Controls.Add(closeButton);
                 form.AcceptButton = closeButton;
                 form.CancelButton = closeButton;
+                form.ActiveControl = closeButton;
 
                 form.ShowDialog();
                 return true;
@@ -2028,12 +2275,17 @@ public sealed class BdisTestRunner
         var workflow = new BdisWorkflow(_config);
 
         // The order below follows the functional order recorded in BDIS.side.
-        // Each RunStep call stops the remaining country steps when it fails.
+        // Each RunStep call stops the remaining country steps when it fails,
+        // unless the step is explicitly marked as optional (non-fatal warning).
         if (!RunStep(countryResult, driver, "Login", () =>
                 _loginService.Login(driver, urlProfile.Url, wait, countryProfile)))
         {
             return FinishCountry(countryResult);
         }
+
+        // Diagnostics only: confirms which backend actually served the request.
+        // This is written to the local log and never to the HTML report.
+        LogEffectiveBackend(driver, urlProfile.WebKey, countryProfile.DisplayName);
 
         if (!RunStep(countryResult, driver, "Document Query - Search", () =>
                 workflow.DocumentQuerySearch(driver, wait, countryProfile)))
@@ -2048,7 +2300,8 @@ public sealed class BdisTestRunner
         }
 
         if (!RunStep(countryResult, driver, "Document Query - Email", () =>
-                workflow.DocumentQueryEmail(driver, wait)))
+                workflow.DocumentQueryEmail(driver, wait, _config.GetEmailTimeoutSeconds(urlProfile.WebKey)),
+                _config.IsEmailStepOptional(urlProfile.WebKey)))
         {
             return FinishCountry(countryResult);
         }
@@ -2092,7 +2345,17 @@ public sealed class BdisTestRunner
         return FinishCountry(countryResult);
     }
 
-    private bool RunStep(CountryTestResult countryResult, IWebDriver driver, string stepName, Action action)
+    /// <summary>
+    /// Records a step and returns true when execution may continue. A failed
+    /// optional step is stored as WARNING, does not fail the country and returns
+    /// true so the remaining steps still run.
+    /// </summary>
+    private bool RunStep(
+        CountryTestResult countryResult,
+        IWebDriver driver,
+        string stepName,
+        Action action,
+        bool isOptional = false)
     {
         var stepResult = new TestStepResult
         {
@@ -2122,8 +2385,12 @@ public sealed class BdisTestRunner
         }
         catch (Exception exception)
         {
-            stepResult.Status = "FAILED";
-            stepResult.Details = _config.Redactor.Redact(exception.Message);
+            var safeDetails = _config.Redactor.Redact(exception.Message);
+
+            stepResult.Status = isOptional ? "WARNING" : "FAILED";
+            stepResult.Details = isOptional
+                ? $"Warning (non-fatal). The workflow continued with the remaining steps. Details: {safeDetails}"
+                : safeDetails;
 
             // The login page can contain the username field, so no screenshot
             // is captured for login failures.
@@ -2140,17 +2407,52 @@ public sealed class BdisTestRunner
             stepResult.EndTime = DateTimeOffset.Now;
 
             countryResult.Steps.Add(stepResult);
+            _logger.LogStep(stepResult);
+
+            if (isOptional)
+            {
+                // Warnings stay in the local log and HTML report. They never
+                // change the country, environment or global status and they are
+                // not sent in the Power Automate error field.
+                _logger.LogInfo(
+                    $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: WARNING - {safeDetails}");
+
+                _progress?.Invoke(
+                    $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: WARNING - {safeDetails}");
+
+                return true;
+            }
+
             countryResult.Status = "FAILED";
             countryResult.FailedStep = stepName;
-            countryResult.ErrorMessage = stepResult.Details;
+            countryResult.ErrorMessage = safeDetails;
 
-            _logger.LogStep(stepResult);
             _logger.LogError($"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}", exception);
 
             _progress?.Invoke(
-                $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: FAILED - {stepResult.Details}");
+                $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: FAILED - {safeDetails}");
 
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Diagnostics only. Confirms which backend actually served the request by
+    /// logging the effective URL and the footer text. Never written to the report.
+    /// </summary>
+    private void LogEffectiveBackend(IWebDriver driver, string webKey, string countryName)
+    {
+        try
+        {
+            var footer = driver.FindElements(By.CssSelector(".bcopyright")).FirstOrDefault();
+            var footerText = footer?.Text?.Trim() ?? "";
+
+            _logger.LogInfo(
+                $"Effective page for {webKey} / {countryName}: {driver.Url} | Footer: {footerText}");
+        }
+        catch
+        {
+            // Diagnostics must never affect the test result.
         }
     }
 
@@ -2268,15 +2570,27 @@ void Main()
 
         var summary = runner.Run(selectedMode.Value);
 
-        HtmlReportGenerator.Generate(
-            htmlReportPath,
-            summary.Steps,
-            ProgramSettings.TestName,
-            selectedMode,
-            currentUser,
-            summary.GlobalStatus);
+        var warningCount = summary.Steps.Count(step => step.Status == "WARNING");
+        logger.LogInfo($"Steps with warnings: {warningCount}.");
 
-        logger.LogInfo($"HTML report generated at: {htmlReportPath}");
+        // Report generation and webhook delivery are independent: a report
+        // failure must never prevent the Power Automate notification.
+        try
+        {
+            HtmlReportGenerator.Generate(
+                htmlReportPath,
+                summary.Steps,
+                ProgramSettings.TestName,
+                selectedMode,
+                currentUser,
+                summary.GlobalStatus);
+
+            logger.LogInfo($"HTML report generated at: {htmlReportPath}");
+        }
+        catch (Exception exception)
+        {
+            logger.LogError("HTML report generation", exception);
+        }
 
         if (summary.Environments.Count > 0)
         {

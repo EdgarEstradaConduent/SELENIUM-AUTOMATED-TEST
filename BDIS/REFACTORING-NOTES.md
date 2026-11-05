@@ -46,6 +46,10 @@ usShipmentNbrPK=<us-packet-print-shipment>
 # Recipient used by the Document Query email step
 emailRecipient=<recipient>
 
+# Environments where a Document Query email failure is a non-fatal warning
+emailWarningEnvironments=F5,SU6BDISWEB2,SU6BDISWEB3,SU6BDISWEB4
+emailWarningTimeoutSeconds=20
+
 # Power Automate webhook endpoint
 powerAutomateWebhookUrl=<webhook-url>
 
@@ -72,6 +76,8 @@ uploadTimeoutSeconds=120
 | n/a | `caShipmentNbrPK` | Canada Packet Print shipment from `BDIS.side`. |
 | n/a | `usShipmentNbrPK` | US Packet Print shipment from `BDIS.side`. |
 | n/a | `emailRecipient` | Recipient used by the email step from `BDIS.side`. |
+| n/a | `emailWarningEnvironments` | Environments where an email failure is a non-fatal warning. |
+| n/a | `emailWarningTimeoutSeconds` | Shorter email wait used only on warning environments. |
 | n/a | `elementTimeoutSeconds` | Explicit element wait timeout. |
 | n/a | `pageLoadTimeoutSeconds` | Explicit page load timeout. |
 | n/a | `uploadTimeoutSeconds` | Explicit image upload timeout. |
@@ -298,8 +304,8 @@ Success example:
       "webKey": "F5",
       "targetUrl": "https://www.brok.dis.ups.com/login.aspx",
       "status": "PASSED",
-      "startTime": "2026-11-04T17:00:00-06:00",
-      "endTime": "2026-11-04T17:08:30-06:00",
+      "startTime": "2026-11-04T23:00:00Z",
+      "endTime": "2026-11-04T23:08:30Z",
       "error": ""
     }
   ]
@@ -318,8 +324,8 @@ Aggregated country failure example:
       "webKey": "F5",
       "targetUrl": "https://www.brok.dis.ups.com/login.aspx",
       "status": "FAILED",
-      "startTime": "2026-11-04T17:00:00-06:00",
-      "endTime": "2026-11-04T17:08:30-06:00",
+      "startTime": "2026-11-04T23:00:00Z",
+      "endTime": "2026-11-04T23:08:30Z",
       "error": "Canada: PASSED | United States: FAILED at Manipulate Image - Upload because the upload confirmation was not displayed."
     }
   ]
@@ -333,9 +339,12 @@ Rules:
 - `status` is `PASSED` only when both Canada and United States pass.
 - `startTime` is the start of the environment run.
 - `endTime` is the end of both country workflows.
+- `startTime` and `endTime` are always UTC ISO 8601 values ending in `Z`.
 - `error` contains sanitized, aggregated country failure details.
 - `globalStatus` is `PASSED` only when every environment passes.
 - `NOT_EXECUTED` is used only in the local HTML report for prerequisite failures and is not sent to Power Automate.
+
+> **Timezone contract:** the flow calls `convertFromUtc(items('Apply_to_each')?['startTime'], 'Mountain Standard Time', ...)`. `convertFromUtc` requires a UTC timestamp. Serializing a local offset such as `-06:00` makes the `Append_to_array_variable` action fail. The script therefore serializes both values with `.ToUniversalTime()` and the `yyyy-MM-dd'T'HH:mm:ss'Z'` format, matching the original working script.
 
 ### 5.4 Adaptive Card assessment
 
@@ -355,6 +364,34 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - Other Selenium tests that send the same object envelope are unaffected.
 - If another test sends a root array directly, this refactoring does not change that behavior.
 
+### 5.6 Non-fatal email warnings
+
+- The Document Query email step runs on every environment.
+- Some environments are served by backends that cannot send mail. The footer may report a different web server than the configured URL, so the email confirmation never arrives.
+- `emailWarningEnvironments` lists the environments where an email failure is a non-fatal `WARNING` instead of a hard `FAILED`. The deployed value is `F5,SU6BDISWEB2,SU6BDISWEB3,SU6BDISWEB4`.
+- A warning:
+  - keeps `CountryTestResult`, `EnvironmentTestResult` and `globalStatus` as `PASSED`;
+  - writes `WARNING` to the local log and shows a yellow `Warning` badge in the local HTML report;
+  - does not populate the webhook `error` field and is not sent to Power Automate;
+  - lets the workflow continue with Packet Print, Manipulate Image and Logout.
+- `SU6BDISWEB5` is not listed, so its email failure remains strict.
+- `DocumentQueryEmail` always attempts to return to Document Query in a `finally` block, so a failed email cannot leave the email form open and break Packet Print.
+- `emailWarningTimeoutSeconds` (default: `pageLoadTimeoutSeconds`) shortens the confirmation wait only on warning environments.
+- After login, the effective URL and the `.bcopyright` footer text are written to the local log for diagnostics only. They are not added to the HTML report.
+
+### 5.7 Webhook diagnostics and retries
+
+- The reporter logs the endpoint host, the exact payload and the HTTP status plus response body.
+- Transient failures (network errors, timeouts, HTTP 429 and HTTP 5xx) are retried up to 3 times with a short backoff.
+- HTML report generation is isolated from webhook delivery: a report failure does not prevent the notification.
+- The payload envelope and field names are unchanged.
+
+### 5.8 Dialog foreground activation
+
+- The mode selection, EdgeDriver help and error dialogs set `ShowInTaskbar`, restore the normal window state and call `SetForegroundWindow`, `BringWindowToTop` and `AttachThreadInput`.
+- The primary button receives focus when the dialog opens.
+- This keeps the dialogs visible when LINQPad is not the active application.
+
 ## 6. Manual validation checklist
 
 ### Configuration
@@ -363,6 +400,7 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] `f5Url`, `webServerUrl2..5`, `username`, `password`, `emailRecipient` are present.
 - [ ] `caShipmentNbr`, `caShipmentNbrPK`, `usShipmentNbr`, `usShipmentNbrPK` are present.
 - [ ] `powerAutomateWebhookUrl` is present if webhook reporting is required.
+- [ ] `emailWarningEnvironments` and `emailWarningTimeoutSeconds` are present.
 - [ ] `BDISImg\Image.tif` exists.
 - [ ] No obsolete keys remain: `url1..url5`, `usrName1..usrPass5`, `usrNameTxtBox`, `usrPassTxtBox`, `loginBtn`, `countryLogin`, `countryCode`, `shipStartDate`, `shipEndDate`, `dutyType`, `mngAcctUser`, `brkrCode`, `newBrokName`.
 - [ ] A missing or empty required key stops the run with a configuration error and no browser launch.
@@ -370,6 +408,7 @@ Country-level detail is aggregated into the environment `error` field, which is 
 ### Execution mode
 
 - [ ] Startup dialog offers `F5 / File Server Test` and `Full Test (All URLs)`.
+- [ ] The startup dialog opens in the foreground with the F5 button focused.
 - [ ] Cancelling the dialog exits without launching Edge.
 - [ ] `F5 / File Server Test` runs exactly one environment (`f5Url`) with webKey `F5`.
 - [ ] `Full Test` runs five environments: `f5Url`, `webServerUrl2..5` with webKeys `F5`, `SU6BDISWEB2..5`.
@@ -381,6 +420,9 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] Country selection is confirmed from the `CountryCode=CA` / `CountryCode=US` link.
 - [ ] Document Query searches the configured shipment and prints.
 - [ ] Document Query sends the email to the configured recipient and body `BDIS TEST`.
+- [ ] On `F5`, `SU6BDISWEB2`, `SU6BDISWEB3` and `SU6BDISWEB4`, an email failure is shown as `Warning`, the workflow continues and the environment stays `PASSED`.
+- [ ] On `SU6BDISWEB5`, an email failure is still a hard failure.
+- [ ] After an email warning, Packet Print, Manipulate Image and Logout still run.
 - [ ] Packet Print selects `Commercial Invoice` for Canada and `CI - Commerical Invoice` for the US.
 - [ ] Packet Print searches the configured packet shipment, removes the row and prints.
 - [ ] Manipulate Image uploads `Image.tif`, rotates left/right, zooms in/out, deletes with confirmation, and validates the confirmation text.
@@ -398,6 +440,8 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] `log\BDISWebApplication_<timestamp>.html` is generated for success, functional failure, and prerequisite failure.
 - [ ] Screenshots are saved under `log\`.
 - [ ] Prerequisite failures appear as `NOT_EXECUTED` in the local report.
+- [ ] Email warnings show a yellow `Warning` badge and are counted in the summary card.
+- [ ] Email warnings never appear in the webhook payload.
 - [ ] Environment-level failures appear as an `Environment` pseudo-country row in the local report and log.
 - [ ] No username, password, webhook URL or recipient appears in the log, HTML report, screenshots, exception text or webhook payload.
 
@@ -412,6 +456,8 @@ Country-level detail is aggregated into the environment `error` field, which is 
 
 - [ ] Webhook receives the object envelope with `testName`, `user`, `globalStatus`, `results`.
 - [ ] Parse JSON consumes `results` and accepts every required field: `webKey`, `targetUrl`, `status`, `startTime`, `endTime`, `error`.
+- [ ] `startTime` and `endTime` are UTC values ending in `Z`.
+- [ ] `Append_to_array_variable` and `convertFromUtc` complete without errors.
 - [ ] `FilasTarjetas` is built for the environment rows.
 - [ ] The Adaptive Card renders and shows the expected status.
 - [ ] A failed environment includes the aggregated country failure in `error`.
