@@ -3,16 +3,20 @@
   <Namespace>System</Namespace>
   <Namespace>System.Collections.Generic</Namespace>
   <Namespace>System.Diagnostics</Namespace>
+  <Namespace>System.Drawing</Namespace>
   <Namespace>System.Globalization</Namespace>
   <Namespace>System.IO</Namespace>
   <Namespace>System.Linq</Namespace>
+  <Namespace>System.Net</Namespace>
   <Namespace>System.Net.Http</Namespace>
   <Namespace>System.Runtime.InteropServices</Namespace>
   <Namespace>System.Text</Namespace>
+  <Namespace>System.Text.Json.Nodes</Namespace>
   <Namespace>System.Text.RegularExpressions</Namespace>
   <Namespace>System.Threading</Namespace>
   <Namespace>System.Windows.Forms</Namespace>
   <Namespace>OpenQA.Selenium</Namespace>
+  <Namespace>OpenQA.Selenium.DevTools</Namespace>
   <Namespace>OpenQA.Selenium.Edge</Namespace>
   <Namespace>OpenQA.Selenium.Support.UI</Namespace>
   <IncludeUncapsulator>false</IncludeUncapsulator>
@@ -21,12 +25,16 @@
 // ============================================================================
 // BDIS Selenium automation for LINQPad 8
 //
-// The functional workflow in this file is derived from BDIS.side:
+// The functional workflow in this file is derived from NEW BDIS.side:
 //   1. Log in to the target environment.
-//   2. Select and validate Canada, then run the Canada workflow.
-//   3. Log out, log in again, select and validate United States, then run the
-//      same workflow with United States parameters.
+//   2. Select Canada and run the Canada workflow.
+//   3. Log out, log in again, select the United States and run the same
+//      workflow with United States parameters.
 //   4. Aggregate both country results into one result per target URL.
+//
+// The legacy BDIS.side file is obsolete and must not be used as a reference.
+// The email test is conditional: it only runs when the page itself reports
+// SU6BDISWEB5, matching the conditional recorded in NEW BDIS.side.
 //
 // The existing LINQPad test harness (HTML report, local log, screenshots,
 // pass/fail evaluation and Power Automate notification) is preserved.
@@ -227,35 +235,21 @@ public sealed class ConfigurationManager
     public int ElementTimeoutSeconds { get; private set; }
     public int PageLoadTimeoutSeconds { get; private set; }
     public int UploadTimeoutSeconds { get; private set; }
-    public int EmailWarningTimeoutSeconds { get; private set; }
-    public List<string> EmailWarningEnvironments { get; private set; }
+    public int ImageUploadPauseSeconds { get; private set; }
+    public int PrintWindowPauseSeconds { get; private set; }
+    public string WebhookProxyHost { get; private set; }
+    public int WebhookProxyPort { get; private set; }
     public List<CountryTestProfile> CountryProfiles { get; private set; }
     public SecretRedactor Redactor { get; private set; }
 
     /// <summary>
-    /// Returns true when a failure of the Document Query email step must be
-    /// treated as a non-fatal warning for the given environment. Every
-    /// environment that is not listed in emailWarningEnvironments stays strict.
+    /// Returns true when the Power Automate webhook must be sent through the
+    /// configured proxy. An empty host disables the proxy and uses a direct
+    /// connection.
     /// </summary>
-    public bool IsEmailStepOptional(string webKey)
+    public bool HasWebhookProxy
     {
-        if (string.IsNullOrWhiteSpace(webKey))
-        {
-            return false;
-        }
-
-        return EmailWarningEnvironments.Any(
-            environment => string.Equals(environment, webKey.Trim(), StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>
-    /// Warning environments use a shorter email confirmation wait so a backend
-    /// that cannot send mail does not add a full page-load timeout per country.
-    /// Strict environments keep the regular page-load timeout.
-    /// </summary>
-    public int GetEmailTimeoutSeconds(string webKey)
-    {
-        return IsEmailStepOptional(webKey) ? EmailWarningTimeoutSeconds : PageLoadTimeoutSeconds;
+        get { return !string.IsNullOrWhiteSpace(WebhookProxyHost); }
     }
 
     private ConfigurationManager(Dictionary<string, string> values, string configPath, string baseDirectory)
@@ -333,16 +327,21 @@ public sealed class ConfigurationManager
         Password = Require("password");
         EmailRecipient = Require("emailRecipient");
 
-        // The defaults match the recommended values in the refactoring
-        // requirements and keep the script runnable with older config files.
+        // The defaults match the values used by NEW BDIS.side. The image pause
+        // gives the upload widget time to finish before the rotation commands.
         ElementTimeoutSeconds = GetInt("elementTimeoutSeconds", 30);
         PageLoadTimeoutSeconds = GetInt("pageLoadTimeoutSeconds", 60);
         UploadTimeoutSeconds = GetInt("uploadTimeoutSeconds", 120);
+        ImageUploadPauseSeconds = GetInt("imageUploadPauseSeconds", 60);
+        PrintWindowPauseSeconds = GetInt("printWindowPauseSeconds", 30);
 
-        // Email delivery is known to fail on backends served by web2..web4.
-        // The list is configurable; an empty list keeps every environment strict.
-        EmailWarningEnvironments = ParseCsv(GetOptional("emailWarningEnvironments"));
-        EmailWarningTimeoutSeconds = GetInt("emailWarningTimeoutSeconds", PageLoadTimeoutSeconds);
+        WebhookProxyHost = GetOptional("webhookProxyHost");
+        WebhookProxyPort = GetInt("webhookProxyPort", 9191);
+        if (WebhookProxyPort < 1 || WebhookProxyPort > 65535)
+        {
+            throw new ConfigurationException(
+                $"Configuration property 'webhookProxyPort' must be between 1 and 65535. Actual value: '{WebhookProxyPort}'.");
+        }
 
         WebhookUrl = GetOptional("powerAutomateWebhookUrl");
 
@@ -412,18 +411,6 @@ public sealed class ConfigurationManager
         }
 
         return value;
-    }
-
-    /// <summary>
-    /// Parses a comma-separated list, trims each entry and drops empty values.
-    /// </summary>
-    private static List<string> ParseCsv(string rawValue)
-    {
-        return (rawValue ?? "")
-            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(value => value.Trim())
-            .Where(value => value.Length > 0)
-            .ToList();
     }
 
     private static Dictionary<string, string> LoadValues(string path)
@@ -504,9 +491,137 @@ public sealed class ExecutionLogger
 }
 
 /// <summary>
-/// Generates the existing dark-themed HTML dashboard. The table now includes
-/// environment and country context so failures can be traced to a specific
-/// workflow.
+/// Shared UPS visual identity for the WinForms dialogs and the HTML report.
+/// The logo is embedded as a Base64 PNG so the report remains a single,
+/// self-contained file and the dialogs do not depend on external assets.
+/// </summary>
+public static class UpsBranding
+{
+    public const string Brown = "#351C15";
+    public const string Gold = "#FFB500";
+    public const string White = "#FFFFFF";
+    public const string LightGray = "#F5F3F0";
+    public const string DarkText = "#2B1A12";
+    public const string MutedText = "#6B5A50";
+
+    public const string LogoBase64 = "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";
+
+    public static readonly Color BrownColor = ColorTranslator.FromHtml(Brown);
+    public static readonly Color GoldColor = ColorTranslator.FromHtml(Gold);
+    public static readonly Color LightGrayColor = ColorTranslator.FromHtml(LightGray);
+    public static readonly Color DarkTextColor = ColorTranslator.FromHtml(DarkText);
+
+    public static Image LoadLogo()
+    {
+        using (var stream = new MemoryStream(Convert.FromBase64String(LogoBase64)))
+        using (var source = Image.FromStream(stream))
+        {
+            // The bitmap copy keeps the image valid after the stream is
+            // disposed, which GDI+ requires for some PNG streams.
+            return new Bitmap(source);
+        }
+    }
+
+    /// <summary>
+    /// Applies the UPS header, logo and border to a dialog. The returned value
+    /// is the recommended top coordinate for the dialog content, below the
+    /// header.
+    /// </summary>
+    public static int ApplyDialogChrome(Form form, string title, string subtitle)
+    {
+        form.BackColor = LightGrayColor;
+        form.ForeColor = DarkTextColor;
+
+        form.Paint += (sender, args) =>
+        {
+            using (var brownPen = new Pen(BrownColor, 5))
+            using (var goldPen = new Pen(GoldColor, 2))
+            {
+                var outer = new Rectangle(0, 0, form.ClientSize.Width - 1, form.ClientSize.Height - 1);
+                args.Graphics.DrawRectangle(brownPen, outer);
+
+                var inner = new Rectangle(4, 4, form.ClientSize.Width - 9, form.ClientSize.Height - 9);
+                args.Graphics.DrawRectangle(goldPen, inner);
+            }
+        };
+
+        var header = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 88,
+            BackColor = BrownColor
+        };
+
+        var titleLabel = new Label
+        {
+            Text = title,
+            Left = 22,
+            Top = 14,
+            Width = 420,
+            Height = 30,
+            ForeColor = GoldColor,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 14F, FontStyle.Bold)
+        };
+
+        var subtitleLabel = new Label
+        {
+            Text = subtitle,
+            Left = 24,
+            Top = 50,
+            Width = 420,
+            Height = 22,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 9F)
+        };
+
+        var logo = new PictureBox
+        {
+            Image = LoadLogo(),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent,
+            Width = 86,
+            Height = 70,
+            Left = Math.Max(440, form.ClientSize.Width - 108),
+            Top = 9,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+
+        header.Controls.Add(titleLabel);
+        header.Controls.Add(subtitleLabel);
+        header.Controls.Add(logo);
+        form.Controls.Add(header);
+
+        return header.Height + 18;
+    }
+
+    public static void StylePrimaryButton(Button button)
+    {
+        button.BackColor = BrownColor;
+        button.ForeColor = Color.White;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderColor = GoldColor;
+        button.FlatAppearance.BorderSize = 2;
+        button.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+        button.Cursor = Cursors.Hand;
+    }
+
+    public static void StyleSecondaryButton(Button button)
+    {
+        button.BackColor = Color.White;
+        button.ForeColor = BrownColor;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderColor = BrownColor;
+        button.FlatAppearance.BorderSize = 2;
+        button.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        button.Cursor = Cursors.Hand;
+    }
+}
+
+/// <summary>
+/// Generates the UPS-branded HTML dashboard. The table keeps the existing
+/// environment and country context; no target URL column or footer is added.
 /// </summary>
 public static class HtmlReportGenerator
 {
@@ -520,49 +635,54 @@ public static class HtmlReportGenerator
     {
         var totalSteps = steps?.Count ?? 0;
         var passedSteps = steps?.Count(s => s.Status == "PASSED") ?? 0;
-        var warningSteps = steps?.Count(s => s.Status == "WARNING") ?? 0;
+        var skippedSteps = steps?.Count(s => s.Status == "SKIPPED") ?? 0;
         var statusColor = globalStatus == "PASSED"
-            ? "#48BB78"
-            : globalStatus == "NOT_EXECUTED" ? "#ECC94B" : "#F56565";
+            ? "#2F855A"
+            : globalStatus == "NOT_EXECUTED" ? "#B7791F" : "#C53030";
 
         var sb = new StringBuilder();
         sb.Append("<html><head><meta charset='utf-8'><title>");
         sb.Append(System.Net.WebUtility.HtmlEncode(testName));
         sb.Append(" Automation Dashboard</title>");
         sb.Append("<style>");
-        sb.Append("body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #1A202C; color: #E2E8F0; }");
-        sb.Append(".header-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #4A5568; padding-bottom: 20px; margin-bottom: 30px; }");
-        sb.Append("h2 { color: #ECC94B; margin: 0; font-size: 28px; font-weight: 600; }");
-        sb.Append(".timestamp { color: #A0AEC0; font-size: 14px; text-align: right; }");
-        sb.Append(".summary-deck { display: flex; gap: 20px; margin-bottom: 30px; }");
-        sb.Append(".card { flex: 1; background: #2D3748; border-radius: 8px; padding: 15px 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); border-left: 5px solid #4A5568; }");
+        sb.Append("body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 32px; background-color: " + UpsBranding.LightGray + "; color: " + UpsBranding.DarkText + "; }");
+        sb.Append(".header-container { display: flex; justify-content: space-between; align-items: center; background: " + UpsBranding.Brown + "; border-bottom: 5px solid " + UpsBranding.Gold + "; border-radius: 12px; padding: 22px 28px; margin-bottom: 28px; box-shadow: 0 6px 18px rgba(53,28,21,0.25); }");
+        sb.Append(".header-title h2 { color: " + UpsBranding.Gold + "; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 0.3px; }");
+        sb.Append(".header-subtitle { color: #F5F3F0; margin-top: 6px; font-size: 14px; }");
+        sb.Append(".header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }");
+        sb.Append(".ups-logo { height: 62px; width: auto; }");
+        sb.Append(".timestamp { color: #F5F3F0; font-size: 13px; text-align: right; }");
+        sb.Append(".summary-deck { display: flex; gap: 18px; margin-bottom: 28px; flex-wrap: wrap; }");
+        sb.Append(".card { flex: 1; min-width: 190px; background: #FFFFFF; border-radius: 10px; padding: 16px 20px; box-shadow: 0 4px 12px rgba(53,28,21,0.10); border-left: 6px solid " + UpsBranding.Brown + "; }");
         sb.Append(".card.status-card { border-left-color: " + statusColor + "; }");
-        sb.Append(".card.agent-card { border-left-color: #63B3ED; }");
-        sb.Append(".card.mode-card { border-left-color: #B794F4; }");
-        sb.Append(".card-title { font-size: 12px; text-transform: uppercase; color: #A0AEC0; font-weight: bold; letter-spacing: 1px; }");
-        sb.Append(".card-value { font-size: 20px; font-weight: bold; margin-top: 5px; color: #FFF; }");
-        sb.Append("table { width: 100%; border-collapse: collapse; background: #2D3748; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }");
-        sb.Append("th { background-color: #1A202C; color: #ECC94B; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 0.5px; padding: 15px; text-align: left; }");
-        sb.Append("td { padding: 15px; border-bottom: 1px solid #4A5568; font-size: 14px; vertical-align: top; }");
+        sb.Append(".card.agent-card { border-left-color: " + UpsBranding.Gold + "; }");
+        sb.Append(".card.mode-card { border-left-color: #8A6A4F; }");
+        sb.Append(".card-title { font-size: 12px; text-transform: uppercase; color: " + UpsBranding.MutedText + "; font-weight: 700; letter-spacing: 1px; }");
+        sb.Append(".card-value { font-size: 20px; font-weight: 700; margin-top: 6px; color: " + UpsBranding.Brown + "; }");
+        sb.Append("table { width: 100%; border-collapse: collapse; background: #FFFFFF; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 14px rgba(53,28,21,0.12); }");
+        sb.Append("th { background-color: " + UpsBranding.Brown + "; color: " + UpsBranding.Gold + "; font-weight: 700; text-transform: uppercase; font-size: 13px; letter-spacing: 0.5px; padding: 15px; text-align: left; }");
+        sb.Append("td { padding: 15px; border-bottom: 1px solid #E8E1DA; font-size: 14px; vertical-align: top; color: " + UpsBranding.DarkText + "; }");
         sb.Append("tr:last-child td { border-bottom: none; }");
-        sb.Append("tr:hover { background-color: #3A475C; }");
-        sb.Append(".badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; text-transform: uppercase; }");
-        sb.Append(".badge-success { background-color: #2F855A; color: #C6F6D5; }");
-        sb.Append(".badge-danger { background-color: #9B2C2C; color: #FED7D7; }");
-        sb.Append(".badge-warning { background-color: #975A16; color: #FEFCBF; text-transform: none; }");
-        sb.Append("pre { background: #1A202C; padding: 12px; border-radius: 6px; border-left: 4px solid #F56565; white-space: pre-wrap; color: #FEB2B2; font-size: 12px; font-family: 'Courier New', Courier, monospace; margin-top: 8px; }");
-        sb.Append("pre.warning-details { border-left-color: #ECC94B; color: #FEFCBF; }");
-        sb.Append(".screenshot-link { display: inline-block; margin-top: 8px; color: #63B3ED; text-decoration: none; font-weight: bold; font-size: 13px; }");
-        sb.Append(".screenshot-link:hover { text-decoration: underline; color: #4299E1; }");
+        sb.Append("tr:hover { background-color: #FFF7E0; }");
+        sb.Append(".badge { padding: 4px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; display: inline-block; text-transform: uppercase; }");
+        sb.Append(".badge-success { background-color: #2F855A; color: #FFFFFF; }");
+        sb.Append(".badge-danger { background-color: #C53030; color: #FFFFFF; }");
+        sb.Append(".badge-warning { background-color: #B7791F; color: #FFFFFF; }");
+        sb.Append(".badge-skipped { background-color: #718096; color: #FFFFFF; }");
+        sb.Append("pre { background: #FFF5F5; padding: 12px; border-radius: 6px; border-left: 4px solid #C53030; white-space: pre-wrap; color: #742A2A; font-size: 12px; font-family: 'Courier New', Courier, monospace; margin-top: 8px; }");
+        sb.Append(".screenshot-link { display: inline-block; margin-top: 8px; color: " + UpsBranding.Brown + "; text-decoration: none; font-weight: 700; font-size: 13px; border-bottom: 2px solid " + UpsBranding.Gold + "; }");
+        sb.Append(".screenshot-link:hover { color: #8A6A4F; }");
         sb.Append("</style></head><body>");
 
         sb.Append("<div class='header-container'>");
-        sb.Append("<div><h2>Automated Test Execution Dashboard</h2><div style='color:#A0AEC0; margin-top:5px;'>");
+        sb.Append("<div class='header-title'><h2>Automated Test Execution Dashboard</h2><div class='header-subtitle'>");
         sb.Append(System.Net.WebUtility.HtmlEncode(testName));
         sb.Append(" Web Application Evaluation</div></div>");
-        sb.Append("<div class='timestamp'><strong>Execution Date:</strong> ");
+        sb.Append("<div class='header-right'><img class='ups-logo' alt='UPS' src='data:image/png;base64,");
+        sb.Append(UpsBranding.LogoBase64);
+        sb.Append("'><div class='timestamp'><strong>Execution Date:</strong> ");
         sb.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-        sb.Append("</div></div>");
+        sb.Append("</div></div></div>");
 
         sb.Append("<div class='summary-deck'>");
         sb.Append("<div class='card agent-card'><div class='card-title'>PCM Operator Agent</div><div class='card-value'>");
@@ -581,11 +701,11 @@ public static class HtmlReportGenerator
         sb.Append(" / ");
         sb.Append(totalSteps);
         sb.Append(" Steps Passed");
-        if (warningSteps > 0)
+        if (skippedSteps > 0)
         {
             sb.Append(" (");
-            sb.Append(warningSteps);
-            sb.Append(warningSteps == 1 ? " warning)" : " warnings)");
+            sb.Append(skippedSteps);
+            sb.Append(" skipped)");
         }
         sb.Append("</div></div>");
         sb.Append("</div>");
@@ -598,13 +718,14 @@ public static class HtmlReportGenerator
             for (var i = 0; i < steps.Count; i++)
             {
                 var step = steps[i];
-                var isWarning = step.Status == "WARNING";
+                var isSkipped = step.Status == "SKIPPED";
                 var badgeClass = step.Status == "PASSED"
                     ? "badge-success"
-                    : isWarning || step.Status == "NOT_EXECUTED" ? "badge-warning" : "badge-danger";
+                    : isSkipped ? "badge-skipped"
+                    : step.Status == "NOT_EXECUTED" ? "badge-warning" : "badge-danger";
                 var badgeText = step.Status == "PASSED"
                     ? "PASSED"
-                    : isWarning ? "Warning"
+                    : isSkipped ? "SKIPPED"
                     : step.Status == "NOT_EXECUTED" ? "NOT EXECUTED" : "ERROR";
 
                 sb.Append("<tr>");
@@ -626,9 +747,9 @@ public static class HtmlReportGenerator
                 sb.Append(badgeText);
                 sb.Append("</span>");
 
-                if (step.Status != "PASSED")
+                if (step.Status != "PASSED" && !isSkipped)
                 {
-                    sb.Append(isWarning ? "<pre class='warning-details'>" : "<pre>");
+                    sb.Append("<pre>");
                     sb.Append(System.Net.WebUtility.HtmlEncode(step.Details ?? ""));
                     sb.Append("</pre>");
 
@@ -637,13 +758,13 @@ public static class HtmlReportGenerator
                         sb.Append("<br><a class='screenshot-link' href='");
                         sb.Append(System.Net.WebUtility.HtmlEncode(step.ScreenshotPath));
                         sb.Append("' target='_blank'>");
-                        sb.Append(isWarning ? "View Warning Screenshot" : "View Error Screenshot");
+                        sb.Append("View Error Screenshot");
                         sb.Append("</a>");
                     }
                 }
                 else
                 {
-                    sb.Append("<span style='color: #CBD5E0;'>");
+                    sb.Append("<span style='color: #5A4A42;'>");
                     sb.Append(System.Net.WebUtility.HtmlEncode(step.Details ?? ""));
                     sb.Append("</span>");
                 }
@@ -691,6 +812,9 @@ public sealed class PowerAutomateReporter
         try
         {
             _logger.LogInfo($"Power Automate endpoint host: {new Uri(_config.WebhookUrl).Host}");
+            _logger.LogInfo(_config.HasWebhookProxy
+                ? $"Power Automate proxy: {_config.WebhookProxyHost}:{_config.WebhookProxyPort}"
+                : "Power Automate proxy: direct connection.");
             _logger.LogInfo($"Power Automate payload: {diagnosticPayload}");
             $"\n[Payload JSON sent to Webhook]:\n{diagnosticPayload}\n".Dump();
         }
@@ -703,30 +827,39 @@ public sealed class PowerAutomateReporter
         {
             try
             {
-                using (var client = new HttpClient())
+                using (var handler = new HttpClientHandler())
                 {
-                    client.Timeout = TimeSpan.FromSeconds(30);
-
-                    using (var content = new StringContent(payload, Encoding.UTF8, "application/json"))
-                    using (var response = client.PostAsync(_config.WebhookUrl, content).GetAwaiter().GetResult())
+                    if (_config.HasWebhookProxy)
                     {
-                        var statusCode = (int)response.StatusCode;
-                        var responseBody = Truncate(
-                            _config.Redactor.Redact(response.Content.ReadAsStringAsync().GetAwaiter().GetResult()));
+                        handler.Proxy = new WebProxy(_config.WebhookProxyHost, _config.WebhookProxyPort);
+                        handler.UseProxy = true;
+                    }
 
-                        if (response.IsSuccessStatusCode)
+                    using (var client = new HttpClient(handler))
+                    {
+                        client.Timeout = TimeSpan.FromSeconds(30);
+
+                        using (var content = new StringContent(payload, Encoding.UTF8, "application/json"))
+                        using (var response = client.PostAsync(_config.WebhookUrl, content).GetAwaiter().GetResult())
                         {
+                            var statusCode = (int)response.StatusCode;
+                            var responseBody = Truncate(
+                                _config.Redactor.Redact(response.Content.ReadAsStringAsync().GetAwaiter().GetResult()));
+
+                            if (response.IsSuccessStatusCode)
+                            {
+                                _logger.LogInfo(
+                                    $"Power Automate notification sent successfully (attempt {attempt}/{MaxAttempts}). Status code: {statusCode}. Response: {responseBody}");
+                                return;
+                            }
+
                             _logger.LogInfo(
-                                $"Power Automate notification sent successfully (attempt {attempt}/{MaxAttempts}). Status code: {statusCode}. Response: {responseBody}");
-                            return;
-                        }
+                                $"Power Automate notification failed (attempt {attempt}/{MaxAttempts}). Status code: {statusCode}. Response: {responseBody}");
 
-                        _logger.LogInfo(
-                            $"Power Automate notification failed (attempt {attempt}/{MaxAttempts}). Status code: {statusCode}. Response: {responseBody}");
-
-                        if (!IsTransientStatusCode(statusCode) || attempt == MaxAttempts)
-                        {
-                            return;
+                            if (!IsTransientStatusCode(statusCode) || attempt == MaxAttempts)
+                            {
+                                return;
+                            }
                         }
                     }
                 }
@@ -1132,8 +1265,8 @@ public sealed class SeleniumWaitHelper
 }
 
 /// <summary>
-/// Selects a country and validates the selection using application state that
-/// is independent from the dropdown itself.
+/// Selects a country from the login country list. NEW BDIS.side does not
+/// validate the Packet Print href, so no post-login country assertion is made.
 /// </summary>
 public sealed class CountrySelectionService
 {
@@ -1169,21 +1302,6 @@ public sealed class CountrySelectionService
             && selectedText.IndexOf(profile.CountryCode, StringComparison.OrdinalIgnoreCase) < 0)
         {
             throw new Exception($"Country selection validation failed. Expected '{profile.CountrySelectText}' but the selected value was '{selectedText}'.");
-        }
-    }
-
-    public void ValidateCountry(IWebDriver driver, SeleniumWaitHelper wait, CountryTestProfile profile)
-    {
-        // The Packet Print link contains CountryCode=CA or CountryCode=US. This
-        // confirms that the application actually switched country, rather than
-        // only changing the dropdown selection.
-        var packetPrintLink = wait.WaitVisible(By.Id("hlPacketPrint"));
-        var href = packetPrintLink.GetAttribute("href") ?? "";
-        var expectedCountryCode = $"CountryCode={profile.CountryCode}";
-
-        if (href.IndexOf(expectedCountryCode, StringComparison.OrdinalIgnoreCase) < 0)
-        {
-            throw new Exception($"Country selection could not be confirmed. Expected '{expectedCountryCode}' in the Packet Print link, but the actual link was '{href}'.");
         }
     }
 }
@@ -1232,8 +1350,6 @@ public sealed class BdisLoginService
                 "Login failed. The expected post-login page was not displayed. Verify the configured credentials, country selection and target environment.",
                 exception);
         }
-
-        _countrySelectionService.ValidateCountry(driver, wait, profile);
     }
 
     public void Logout(IWebDriver driver, SeleniumWaitHelper wait, string url)
@@ -1267,9 +1383,9 @@ public sealed class BdisLoginService
 }
 
 /// <summary>
-/// Implements the reusable country workflow derived from BDIS.side. All
-/// selectors are ID-based selectors recorded in BDIS.side; absolute XPath
-/// expressions from the old script are not used.
+/// Implements the reusable country workflow derived from NEW BDIS.side. All
+/// selectors are ID or CSS selectors recorded in NEW BDIS.side; absolute XPath
+/// expressions from the legacy script are not used.
 /// </summary>
 public sealed class BdisWorkflow
 {
@@ -1306,7 +1422,42 @@ public sealed class BdisWorkflow
         var existingWindowCount = driver.WindowHandles.Count;
 
         wait.WaitClickable(By.Id("MainContent_btnPrint")).Click();
-        CloseNewWindowAndReturn(driver, wait, existingWindowCount, mainWindowHandle);
+        CloseNewWindowAndReturn(driver, wait, existingWindowCount, mainWindowHandle, _config.PrintWindowPauseSeconds);
+    }
+
+    /// <summary>
+    /// Detects the web server reported by the current page, exactly as the
+    /// executeScript command in NEW BDIS.side. The result drives the email
+    /// conditional and is never used to decide pass/fail by itself.
+    /// </summary>
+    public string DetectWebServer(IWebDriver driver)
+    {
+        const string script =
+            "var t = document.body.innerText.toUpperCase();"
+            + "return [\"SU6BDISWEB2\",\"SU6BDISWEB3\",\"SU6BDISWEB4\",\"SU6BDISWEB5\"]"
+            + ".find(function(s){return t.includes(s);}) || \"UNKNOWN\";";
+
+        try
+        {
+            var result = ((IJavaScriptExecutor)driver).ExecuteScript(script);
+            var webServer = Convert.ToString(result, CultureInfo.InvariantCulture)?.Trim();
+            return string.IsNullOrWhiteSpace(webServer) ? "UNKNOWN" : webServer.ToUpperInvariant();
+        }
+        catch
+        {
+            // A diagnostic failure must not prevent the remaining workflow.
+            return "UNKNOWN";
+        }
+    }
+
+    /// <summary>
+    /// NEW BDIS.side runs the email test only when the page text reports
+    /// SU6BDISWEB5. Every other detected server skips the email step.
+    /// </summary>
+    public static bool IsEmailRequired(string webServer)
+    {
+        return !string.IsNullOrWhiteSpace(webServer)
+            && webServer.IndexOf("SU6BDISWEB5", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     public void DocumentQueryEmail(IWebDriver driver, SeleniumWaitHelper wait, int timeoutSeconds)
@@ -1323,7 +1474,7 @@ public sealed class BdisWorkflow
             var emailBodyBox = wait.WaitVisible(By.Id("MainContent_txtEmailBody"));
             emailBodyBox.Click();
             emailBodyBox.Clear();
-            emailBodyBox.SendKeys("BDIS TEST");
+            emailBodyBox.SendKeys("BDIS E-mail Test");
 
             wait.WaitClickable(By.Id("MainContent_BtnSend")).Click();
             wait.WaitForPageSourceContains($"E-mail successfully sent to {_config.EmailRecipient}.", timeoutSeconds);
@@ -1332,8 +1483,7 @@ public sealed class BdisWorkflow
         {
             // Returning to the Document Query page makes the following Packet
             // Print navigation deterministic for both countries. This also runs
-            // when the confirmation is not displayed so a non-fatal email
-            // warning does not leave the email form open.
+            // when the confirmation is not displayed.
             TryReturnToDocumentQuery(driver);
         }
     }
@@ -1399,52 +1549,319 @@ public sealed class BdisWorkflow
         var existingWindowCount = driver.WindowHandles.Count;
 
         wait.WaitClickable(By.Id("MainContent_BtnPrint")).Click();
-        CloseNewWindowAndReturn(driver, wait, existingWindowCount, mainWindowHandle);
+        CloseNewWindowAndReturn(driver, wait, existingWindowCount, mainWindowHandle, _config.PrintWindowPauseSeconds);
     }
 
     public void UploadImage(IWebDriver driver, SeleniumWaitHelper wait)
     {
         wait.WaitClickable(By.Id("hlManipulateImage")).Click();
 
-        // Prefer the HTML file input so the native Windows File Explorer dialog
-        // is not automated with mouse or keyboard timing.
-        var fileInput = driver.FindElements(By.CssSelector("input[type='file']"))
-            .FirstOrDefault(element => element.Enabled || element.Displayed);
+        // NEW BDIS.side activates the Upload File control and then targets the
+        // file input. Selenium IDE cannot do that in Microsoft Edge, but the
+        // WebDriver session can: DOM.setFileInputFiles attaches the file
+        // without automating the native Windows file dialog.
+        var devToolsSession = TryGetDevToolsSession(driver);
+        var fileInput = FindFileInput(driver);
 
         if (fileInput == null)
         {
-            // Some builds create the file input only after the Upload File
-            // control is activated. This is the only fallback and must be
-            // validated against the live application.
-            wait.WaitClickable(By.CssSelector(".formbuttonblue")).Click();
-            fileInput = wait.WaitPresent(By.CssSelector("input[type='file']"), _config.ElementTimeoutSeconds);
+            ClickUploadButton(driver);
+
+            try
+            {
+                fileInput = wait.WaitPresent(
+                    By.CssSelector("input[type='file']"),
+                    Math.Min(_config.ElementTimeoutSeconds, 10));
+            }
+            catch (WebDriverTimeoutException)
+            {
+                fileInput = null;
+            }
+
+            if (fileInput == null)
+            {
+                // The chooser interception can prevent older builds from
+                // materializing the input. Fall back to the normal click.
+                DisableFileChooserInterception(devToolsSession);
+                ClickUploadButton(driver);
+                fileInput = wait.WaitPresent(
+                    By.CssSelector("input[type='file']"),
+                    _config.ElementTimeoutSeconds);
+            }
         }
 
-        try
+        if (fileInput == null)
         {
-            fileInput.SendKeys(_config.ImageFilePath);
-        }
-        catch (ElementNotInteractableException)
-        {
-            // A hidden file input can still be populated after making it
-            // visible through JavaScript.
-            var javascriptExecutor = (IJavaScriptExecutor)driver;
-            javascriptExecutor.ExecuteScript(
-                "arguments[0].style.display='block'; arguments[0].style.visibility='visible';",
-                fileInput);
-            fileInput.SendKeys(_config.ImageFilePath);
+            throw new Exception("The image file input was not found on the Manipulate Images page.");
         }
 
+        var uploadMethod = "";
+        if (TrySetFileWithDevTools(devToolsSession, _config.ImageFilePath))
+        {
+            uploadMethod = "DOM.setFileInputFiles";
+        }
+        else if (TrySetFileWithSendKeys(driver, fileInput, _config.ImageFilePath))
+        {
+            uploadMethod = "WebElement.SendKeys";
+        }
+        else if (TrySetFileWithJavaScript(driver, fileInput, _config.ImageFilePath))
+        {
+            uploadMethod = "JavaScript DataTransfer";
+        }
+        else
+        {
+            throw new Exception(
+                "The image file could not be attached to the upload control. "
+                + "The DevTools, SendKeys and JavaScript DataTransfer strategies all failed.");
+        }
+
+        // The preview confirms that the application received the file. The
+        // upload method is intentionally not written to the report.
         wait.WaitVisible(By.CssSelector(".iv-viewer > img"), _config.UploadTimeoutSeconds);
+
+        // NEW BDIS.side waits before the rotation commands. The pause gives the
+        // image widget time to finish processing the uploaded file.
+        Thread.Sleep(TimeSpan.FromSeconds(_config.ImageUploadPauseSeconds));
     }
 
     public void EditImage(IWebDriver driver, SeleniumWaitHelper wait)
     {
-        wait.WaitVisible(By.CssSelector(".iv-viewer > img")).Click();
+        // NEW BDIS.side no longer clicks the preview image before rotating.
+        wait.WaitVisible(By.CssSelector(".iv-viewer > img"));
         wait.WaitClickable(By.CssSelector(".fa-rotate-left")).Click();
         wait.WaitClickable(By.CssSelector(".fa-rotate-right")).Click();
         wait.WaitClickable(By.CssSelector(".fa-search-plus")).Click();
         wait.WaitClickable(By.CssSelector(".fa-search-minus")).Click();
+    }
+
+    private static void ClickUploadButton(IWebDriver driver)
+    {
+        var uploadButton = driver.FindElements(By.CssSelector(".formbuttonblue")).FirstOrDefault();
+        if (uploadButton == null)
+        {
+            throw new Exception("The Upload File control was not found.");
+        }
+
+        uploadButton.Click();
+    }
+
+    private static IWebElement FindFileInput(IWebDriver driver)
+    {
+        // Prefer the body-level input recorded in NEW BDIS.side, then any file
+        // input. Hidden inputs are valid because they are populated by CDP or
+        // JavaScript rather than by a real mouse click.
+        var selectors = new[] { "body > input[type='file']", "input[type='file']" };
+        foreach (var selector in selectors)
+        {
+            var element = driver.FindElements(By.CssSelector(selector)).FirstOrDefault();
+            if (element != null)
+            {
+                return element;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Creates a DevTools session and asks Page to intercept the native file
+    /// chooser. This is best effort: when the Edge version does not support the
+    /// command, the upload falls back to the other strategies.
+    /// </summary>
+    private static DevToolsSession TryGetDevToolsSession(IWebDriver driver)
+    {
+        try
+        {
+            var edgeDriver = driver as EdgeDriver;
+            if (edgeDriver == null)
+            {
+                return null;
+            }
+
+            var session = edgeDriver.GetDevToolsSession();
+
+            try
+            {
+                session.SendCommand(
+                    "Page.enable",
+                    new JsonObject(),
+                    CancellationToken.None,
+                    null,
+                    true);
+            }
+            catch
+            {
+                // Interception is optional.
+            }
+
+            try
+            {
+                session.SendCommand(
+                    "Page.setInterceptFileChooserDialog",
+                    new JsonObject { ["enabled"] = true },
+                    CancellationToken.None,
+                    null,
+                    true);
+            }
+            catch
+            {
+                // Older Edge versions do not expose this command.
+            }
+
+            return session;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void DisableFileChooserInterception(DevToolsSession session)
+    {
+        if (session == null)
+        {
+            return;
+        }
+
+        try
+        {
+            session.SendCommand(
+                "Page.setInterceptFileChooserDialog",
+                new JsonObject { ["enabled"] = false },
+                CancellationToken.None,
+                null,
+                true);
+        }
+        catch
+        {
+            // Best effort only.
+        }
+    }
+
+    /// <summary>
+    /// Attaches the file through the Chromium DevTools protocol. This works in
+    /// Microsoft Edge because it targets the DOM node directly instead of using
+    /// the Selenium IDE file-upload command.
+    /// </summary>
+    private static bool TrySetFileWithDevTools(DevToolsSession session, string filePath)
+    {
+        if (session == null || string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var document = session.SendCommand(
+                "DOM.getDocument",
+                JsonNode.Parse("{\"depth\":-1}"),
+                CancellationToken.None,
+                null,
+                true);
+
+            if (!document.Result.HasValue
+                || !document.Result.Value.TryGetProperty("root", out var root)
+                || !root.TryGetProperty("nodeId", out var rootNodeIdValue))
+            {
+                return false;
+            }
+
+            var rootNodeId = rootNodeIdValue.GetInt32();
+
+            foreach (var selector in new[] { "body > input[type='file']", "input[type='file']" })
+            {
+                var query = session.SendCommand(
+                    "DOM.querySelector",
+                    new JsonObject
+                    {
+                        ["nodeId"] = rootNodeId,
+                        ["selector"] = selector
+                    },
+                    CancellationToken.None,
+                    null,
+                    true);
+
+                if (!query.Result.HasValue
+                    || !query.Result.Value.TryGetProperty("nodeId", out var nodeIdValue))
+                {
+                    continue;
+                }
+
+                var nodeId = nodeIdValue.GetInt32();
+                if (nodeId <= 0)
+                {
+                    continue;
+                }
+
+                session.SendCommand(
+                    "DOM.setFileInputFiles",
+                    new JsonObject
+                    {
+                        ["files"] = new JsonArray { filePath },
+                        ["nodeId"] = nodeId
+                    },
+                    CancellationToken.None,
+                    null,
+                    true);
+
+                return true;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TrySetFileWithSendKeys(IWebDriver driver, IWebElement fileInput, string filePath)
+    {
+        try
+        {
+            var javascriptExecutor = (IJavaScriptExecutor)driver;
+            javascriptExecutor.ExecuteScript(
+                "arguments[0].style.display='block';"
+                + "arguments[0].style.visibility='visible';"
+                + "arguments[0].style.opacity='1';",
+                fileInput);
+
+            fileInput.SendKeys(filePath);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TrySetFileWithJavaScript(IWebDriver driver, IWebElement fileInput, string filePath)
+    {
+        try
+        {
+            var fileBytes = File.ReadAllBytes(filePath);
+            var base64 = Convert.ToBase64String(fileBytes);
+            var fileName = Path.GetFileName(filePath);
+
+            const string script =
+                "var input = arguments[0];"
+                + "var binary = atob(arguments[1]);"
+                + "var bytes = new Uint8Array(binary.length);"
+                + "for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }"
+                + "var file = new File([bytes], arguments[2], { type: 'image/tiff' });"
+                + "var transfer = new DataTransfer();"
+                + "transfer.items.add(file);"
+                + "input.files = transfer.files;"
+                + "input.dispatchEvent(new Event('input', { bubbles: true }));"
+                + "input.dispatchEvent(new Event('change', { bubbles: true }));";
+
+            ((IJavaScriptExecutor)driver).ExecuteScript(script, fileInput, base64, fileName);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public void DeleteImage(IWebDriver driver, SeleniumWaitHelper wait)
@@ -1505,10 +1922,15 @@ public sealed class BdisWorkflow
         IWebDriver driver,
         SeleniumWaitHelper wait,
         int existingWindowCount,
-        string mainWindowHandle)
+        string mainWindowHandle,
+        int pauseBeforeCloseSeconds)
     {
         var newWindowHandle = wait.WaitForNewWindowHandle(existingWindowCount, 30);
         driver.SwitchTo().Window(newWindowHandle);
+
+        // NEW BDIS.side waits before closing the print preview window.
+        Thread.Sleep(TimeSpan.FromSeconds(pauseBeforeCloseSeconds));
+
         driver.Close();
 
         if (driver.WindowHandles.Contains(mainWindowHandle))
@@ -1781,8 +2203,8 @@ public static class DialogService
             using (var form = new Form())
             {
                 form.Text = "BDIS Test Execution Mode";
-                form.Width = 540;
-                form.Height = 250;
+                form.Width = 600;
+                form.Height = 370;
                 form.StartPosition = FormStartPosition.CenterScreen;
                 form.FormBorderStyle = FormBorderStyle.FixedDialog;
                 form.MaximizeBox = false;
@@ -1795,13 +2217,21 @@ public static class DialogService
                     BringToForeground(form);
                 };
 
+                var contentTop = UpsBranding.ApplyDialogChrome(
+                    form,
+                    "BDIS Test Execution Mode",
+                    "UPS automated web evaluation");
+
                 var promptLabel = new Label
                 {
                     Text = "Select the type of test to execute:",
-                    Left = 20,
-                    Top = 20,
-                    Width = 480,
-                    Height = 25
+                    Left = 24,
+                    Top = contentTop,
+                    Width = 540,
+                    Height = 25,
+                    Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                    ForeColor = UpsBranding.DarkTextColor,
+                    BackColor = Color.Transparent
                 };
 
                 TestExecutionMode? selectedMode = null;
@@ -1809,30 +2239,34 @@ public static class DialogService
                 var f5Button = new Button
                 {
                     Text = "F5 / File Server Test",
-                    Left = 20,
-                    Top = 65,
-                    Width = 220,
-                    Height = 45
+                    Left = 24,
+                    Top = contentTop + 40,
+                    Width = 250,
+                    Height = 50
                 };
 
                 var fullButton = new Button
                 {
                     Text = "Full Test (All URLs)",
-                    Left = 270,
-                    Top = 65,
-                    Width = 220,
-                    Height = 45
+                    Left = 300,
+                    Top = contentTop + 40,
+                    Width = 250,
+                    Height = 50
                 };
 
                 var cancelButton = new Button
                 {
                     Text = "Cancel",
-                    Left = 270,
-                    Top = 135,
-                    Width = 220,
-                    Height = 35,
+                    Left = 300,
+                    Top = contentTop + 108,
+                    Width = 250,
+                    Height = 38,
                     DialogResult = DialogResult.Cancel
                 };
+
+                UpsBranding.StylePrimaryButton(f5Button);
+                UpsBranding.StylePrimaryButton(fullButton);
+                UpsBranding.StyleSecondaryButton(cancelButton);
 
                 f5Button.Click += (sender, args) =>
                 {
@@ -1870,8 +2304,8 @@ public static class DialogService
             using (var form = new Form())
             {
                 form.Text = "Microsoft Edge WebDriver Initialization Error";
-                form.Width = 780;
-                form.Height = 650;
+                form.Width = 800;
+                form.Height = 760;
                 form.StartPosition = FormStartPosition.CenterScreen;
                 form.FormBorderStyle = FormBorderStyle.FixedDialog;
                 form.MaximizeBox = false;
@@ -1881,22 +2315,28 @@ public static class DialogService
                 form.WindowState = FormWindowState.Normal;
                 form.Shown += (sender, args) => BringToForeground(form);
 
+                var contentTop = UpsBranding.ApplyDialogChrome(
+                    form,
+                    "Edge WebDriver Initialization Error",
+                    "The browser driver must match Microsoft Edge");
+
                 var instructionsLabel = new Label
                 {
                     Text = instructions,
-                    Left = 20,
-                    Top = 15,
-                    Width = 720,
-                    Height = 330,
-                    AutoSize = false
+                    Left = 24,
+                    Top = contentTop,
+                    Width = 740,
+                    Height = 300,
+                    AutoSize = false,
+                    BackColor = Color.Transparent
                 };
 
                 var detailsBox = new RichTextBox
                 {
                     Text = technicalDetails ?? "",
-                    Left = 20,
-                    Top = 350,
-                    Width = 720,
+                    Left = 24,
+                    Top = contentTop + 310,
+                    Width = 740,
                     Height = 190,
                     ReadOnly = true,
                     ScrollBars = RichTextBoxScrollBars.Vertical
@@ -1905,21 +2345,24 @@ public static class DialogService
                 var downloadButton = new Button
                 {
                     Text = "Open Edge WebDriver Download Page",
-                    Left = 20,
-                    Top = 555,
-                    Width = 290,
-                    Height = 35
+                    Left = 24,
+                    Top = contentTop + 520,
+                    Width = 300,
+                    Height = 38
                 };
 
                 var closeButton = new Button
                 {
                     Text = "Close",
-                    Left = 620,
-                    Top = 555,
-                    Width = 120,
-                    Height = 35,
+                    Left = 640,
+                    Top = contentTop + 520,
+                    Width = 124,
+                    Height = 38,
                     DialogResult = DialogResult.OK
                 };
+
+                UpsBranding.StyleSecondaryButton(downloadButton);
+                UpsBranding.StylePrimaryButton(closeButton);
 
                 downloadButton.Click += (sender, args) => OpenEdgeWebDriverPage();
 
@@ -1944,8 +2387,8 @@ public static class DialogService
             using (var form = new Form())
             {
                 form.Text = title;
-                form.Width = 720;
-                form.Height = 480;
+                form.Width = 760;
+                form.Height = 580;
                 form.StartPosition = FormStartPosition.CenterScreen;
                 form.FormBorderStyle = FormBorderStyle.FixedDialog;
                 form.MaximizeBox = false;
@@ -1955,23 +2398,29 @@ public static class DialogService
                 form.WindowState = FormWindowState.Normal;
                 form.Shown += (sender, args) => BringToForeground(form);
 
+                var contentTop = UpsBranding.ApplyDialogChrome(
+                    form,
+                    title,
+                    "BDIS automated web evaluation");
+
                 var messageLabel = new Label
                 {
                     Text = message ?? "",
-                    Left = 20,
-                    Top = 20,
-                    Width = 660,
+                    Left = 24,
+                    Top = contentTop,
+                    Width = 700,
                     Height = 70,
-                    AutoSize = false
+                    AutoSize = false,
+                    BackColor = Color.Transparent
                 };
 
                 var detailsBox = new RichTextBox
                 {
                     Text = details ?? "",
-                    Left = 20,
-                    Top = 100,
-                    Width = 660,
-                    Height = 280,
+                    Left = 24,
+                    Top = contentTop + 80,
+                    Width = 700,
+                    Height = 260,
                     ReadOnly = true,
                     ScrollBars = RichTextBoxScrollBars.Vertical
                 };
@@ -1979,12 +2428,14 @@ public static class DialogService
                 var closeButton = new Button
                 {
                     Text = "Close",
-                    Left = 560,
-                    Top = 395,
-                    Width = 120,
-                    Height = 35,
+                    Left = 600,
+                    Top = contentTop + 350,
+                    Width = 124,
+                    Height = 38,
                     DialogResult = DialogResult.OK
                 };
+
+                UpsBranding.StylePrimaryButton(closeButton);
 
                 form.Controls.Add(messageLabel);
                 form.Controls.Add(detailsBox);
@@ -2274,9 +2725,8 @@ public sealed class BdisTestRunner
 
         var workflow = new BdisWorkflow(_config);
 
-        // The order below follows the functional order recorded in BDIS.side.
-        // Each RunStep call stops the remaining country steps when it fails,
-        // unless the step is explicitly marked as optional (non-fatal warning).
+        // The order below follows the functional order recorded in NEW BDIS.side.
+        // Each RunStep call stops the remaining country steps when it fails.
         if (!RunStep(countryResult, driver, "Login", () =>
                 _loginService.Login(driver, urlProfile.Url, wait, countryProfile)))
         {
@@ -2299,11 +2749,26 @@ public sealed class BdisTestRunner
             return FinishCountry(countryResult);
         }
 
-        if (!RunStep(countryResult, driver, "Document Query - Email", () =>
-                workflow.DocumentQueryEmail(driver, wait, _config.GetEmailTimeoutSeconds(urlProfile.WebKey)),
-                _config.IsEmailStepOptional(urlProfile.WebKey)))
+        // NEW BDIS.side detects the web server after the print preview closes
+        // and runs the email test only when the page reports SU6BDISWEB5.
+        var detectedWebServer = workflow.DetectWebServer(driver);
+        _logger.LogInfo(
+            $"Detected web server for {urlProfile.WebKey} / {countryProfile.DisplayName}: {detectedWebServer}");
+
+        if (BdisWorkflow.IsEmailRequired(detectedWebServer))
         {
-            return FinishCountry(countryResult);
+            if (!RunStep(countryResult, driver, "Document Query - Email", () =>
+                    workflow.DocumentQueryEmail(driver, wait, _config.PageLoadTimeoutSeconds)))
+            {
+                return FinishCountry(countryResult);
+            }
+        }
+        else
+        {
+            RecordSkippedStep(
+                countryResult,
+                "Document Query - Email",
+                $"Email test skipped because the detected web server '{detectedWebServer}' is not SU6BDISWEB5.");
         }
 
         if (!RunStep(countryResult, driver, "Packet Print - Select and Search", () =>
@@ -2347,15 +2812,13 @@ public sealed class BdisTestRunner
 
     /// <summary>
     /// Records a step and returns true when execution may continue. A failed
-    /// optional step is stored as WARNING, does not fail the country and returns
-    /// true so the remaining steps still run.
+    /// step fails the country and stops the remaining country steps.
     /// </summary>
     private bool RunStep(
         CountryTestResult countryResult,
         IWebDriver driver,
         string stepName,
-        Action action,
-        bool isOptional = false)
+        Action action)
     {
         var stepResult = new TestStepResult
         {
@@ -2387,10 +2850,8 @@ public sealed class BdisTestRunner
         {
             var safeDetails = _config.Redactor.Redact(exception.Message);
 
-            stepResult.Status = isOptional ? "WARNING" : "FAILED";
-            stepResult.Details = isOptional
-                ? $"Warning (non-fatal). The workflow continued with the remaining steps. Details: {safeDetails}"
-                : safeDetails;
+            stepResult.Status = "FAILED";
+            stepResult.Details = safeDetails;
 
             // The login page can contain the username field, so no screenshot
             // is captured for login failures.
@@ -2409,20 +2870,6 @@ public sealed class BdisTestRunner
             countryResult.Steps.Add(stepResult);
             _logger.LogStep(stepResult);
 
-            if (isOptional)
-            {
-                // Warnings stay in the local log and HTML report. They never
-                // change the country, environment or global status and they are
-                // not sent in the Power Automate error field.
-                _logger.LogInfo(
-                    $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: WARNING - {safeDetails}");
-
-                _progress?.Invoke(
-                    $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: WARNING - {safeDetails}");
-
-                return true;
-            }
-
             countryResult.Status = "FAILED";
             countryResult.FailedStep = stepName;
             countryResult.ErrorMessage = safeDetails;
@@ -2434,6 +2881,37 @@ public sealed class BdisTestRunner
 
             return false;
         }
+    }
+
+    /// <summary>
+    /// Records a step that NEW BDIS.side intentionally did not execute, such as
+    /// the email test on a server other than SU6BDISWEB5. A skipped step never
+    /// changes the country, environment or global status and is not sent as an
+    /// error to Power Automate.
+    /// </summary>
+    private void RecordSkippedStep(CountryTestResult countryResult, string stepName, string details)
+    {
+        var now = DateTimeOffset.Now;
+        var stepResult = new TestStepResult
+        {
+            EnvironmentName = countryResult.EnvironmentName,
+            CountryName = countryResult.CountryName,
+            StepName = stepName,
+            Status = "SKIPPED",
+            Details = details,
+            ExecutedBy = _currentUser,
+            StartTime = now,
+            EndTime = now
+        };
+
+        countryResult.Steps.Add(stepResult);
+        _logger.LogStep(stepResult);
+
+        _logger.LogInfo(
+            $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: SKIPPED - {details}");
+
+        _progress?.Invoke(
+            $"{stepResult.EnvironmentName} / {countryResult.CountryName} / {stepName}: SKIPPED");
     }
 
     /// <summary>
@@ -2570,8 +3048,8 @@ void Main()
 
         var summary = runner.Run(selectedMode.Value);
 
-        var warningCount = summary.Steps.Count(step => step.Status == "WARNING");
-        logger.LogInfo($"Steps with warnings: {warningCount}.");
+        var skippedCount = summary.Steps.Count(step => step.Status == "SKIPPED");
+        logger.LogInfo($"Steps skipped by the NEW BDIS.side conditional: {skippedCount}.");
 
         // Report generation and webhook delivery are independent: a report
         // failure must never prevent the Power Automate notification.

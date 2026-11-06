@@ -2,11 +2,12 @@
 
 ## 1. Scope and sources
 
-This refactoring replaces the legacy BDIS test methods with the functional flow recorded in `BDIS.side` while preserving the existing LINQPad infrastructure.
+This refactoring replaces the legacy BDIS test methods with the functional flow recorded in `NEW BDIS.side` while preserving the existing LINQPad infrastructure. The legacy `BDIS.side` file is obsolete and is no longer used as a reference.
 
 | Source | Role |
 | --- | --- |
-| `BDIS/BDIS.side` | Functional source of truth: order, navigation, selectors, values, validations, country-specific behavior. |
+| `BDIS/NEW BDIS.side` | Functional source of truth: order, navigation, selectors, values, country-specific behavior and the conditional email test. |
+| `BDIS/BDIS.side` | Obsolete legacy recording. Do not use. |
 | `BDIS/BDISWEB-SANDY/BDIS-SELENIUM.Linq` | New implementation. |
 | `BDIS/BDISWEB-SANDY/BDIS-SELENIUM.Linq.bak` | Original script for rollback and infrastructure reference. |
 | `BDIS/BDISWEB-SANDY/Config.properties` | New configuration. |
@@ -43,21 +44,29 @@ caShipmentNbrPK=<canada-packet-print-shipment>
 usShipmentNbr=<us-document-query-shipment>
 usShipmentNbrPK=<us-packet-print-shipment>
 
-# Recipient used by the Document Query email step
+# Recipient used by the Document Query email step.
+# NEW BDIS.side runs this step only when the page text reports SU6BDISWEB5.
 emailRecipient=<recipient>
-
-# Environments where a Document Query email failure is a non-fatal warning
-emailWarningEnvironments=F5,SU6BDISWEB2,SU6BDISWEB3,SU6BDISWEB4
-emailWarningTimeoutSeconds=20
 
 # Power Automate webhook endpoint
 powerAutomateWebhookUrl=<webhook-url>
+
+# Proxy used only for the Power Automate webhook request.
+# Leave webhookProxyHost empty to use a direct connection.
+webhookProxyHost=10.138.112.254
+webhookProxyPort=9191
 
 # Selenium timeouts in seconds
 # Defaults used when a value is absent: 30, 60 and 120 respectively.
 elementTimeoutSeconds=30
 pageLoadTimeoutSeconds=60
 uploadTimeoutSeconds=120
+
+# Pause after the image upload is confirmed and before the rotation commands.
+imageUploadPauseSeconds=60
+
+# Pause before closing each print preview window (NEW BDIS.side waits 30s).
+printWindowPauseSeconds=30
 ```
 
 ### Old-to-new key mapping
@@ -71,16 +80,18 @@ uploadTimeoutSeconds=120
 | `url5` | `webServerUrl5` | Clearer name for web server 5. |
 | `usrName1..usrName5` | `username` | One universal credential pair. |
 | `usrPass1..usrPass5` | `password` | One universal credential pair. |
-| `caShipmentNbr` | `caShipmentNbr` | Retained for Canada Document Query; value updated from `BDIS.side`. |
-| `usShipmentNbr` | `usShipmentNbr` | Retained for US Document Query; value updated from `BDIS.side`. |
-| n/a | `caShipmentNbrPK` | Canada Packet Print shipment from `BDIS.side`. |
-| n/a | `usShipmentNbrPK` | US Packet Print shipment from `BDIS.side`. |
-| n/a | `emailRecipient` | Recipient used by the email step from `BDIS.side`. |
-| n/a | `emailWarningEnvironments` | Environments where an email failure is a non-fatal warning. |
-| n/a | `emailWarningTimeoutSeconds` | Shorter email wait used only on warning environments. |
+| `caShipmentNbr` | `caShipmentNbr` | Retained for Canada Document Query; value updated from `NEW BDIS.side`. |
+| `usShipmentNbr` | `usShipmentNbr` | Retained for US Document Query; value updated from `NEW BDIS.side`. |
+| n/a | `caShipmentNbrPK` | Canada Packet Print shipment from `NEW BDIS.side`. |
+| n/a | `usShipmentNbrPK` | US Packet Print shipment from `NEW BDIS.side`. |
+| n/a | `emailRecipient` | Recipient used by the conditional email step from `NEW BDIS.side`. |
 | n/a | `elementTimeoutSeconds` | Explicit element wait timeout. |
 | n/a | `pageLoadTimeoutSeconds` | Explicit page load timeout. |
 | n/a | `uploadTimeoutSeconds` | Explicit image upload timeout. |
+| n/a | `imageUploadPauseSeconds` | Pause after upload and before rotating/zooming the image. |
+| n/a | `printWindowPauseSeconds` | Pause before closing each print preview window. |
+| n/a | `webhookProxyHost` | Proxy host for the webhook request; empty means direct. |
+| n/a | `webhookProxyPort` | Proxy port for the webhook request. |
 
 Removed obsolete keys:
 
@@ -109,12 +120,13 @@ Verification:
 | `SecretRedactor` | Removes credentials, webhook URL and email from logs, reports, dialogs and errors. |
 | `ConfigurationManager` | Loads, validates and exposes configuration; builds URL and country profiles. |
 | `ExecutionLogger` | Tab-separated local log with redaction. |
-| `HtmlReportGenerator` | Existing dashboard-style HTML report. |
-| `PowerAutomateReporter` | Builds and posts the existing object envelope. |
+| `HtmlReportGenerator` | UPS-branded HTML dashboard with a `SKIPPED` badge; no target URL column or footer. |
+| `UpsBranding` | Shared UPS colors, embedded Base64 logo and WinForms dialog styling. |
+| `PowerAutomateReporter` | Builds and posts the existing object envelope; optional webhook proxy. |
 | `JsonHelper` | JSON escaping for the manually built payload. |
 | `ScreenshotHelper` | Failure screenshots. |
 | `SeleniumWaitHelper` | Explicit waits, alerts, page text and new-window handling. |
-| `CountrySelectionService` | Selects and validates the country. |
+| `CountrySelectionService` | Selects the country; no Packet Print href assertion. |
 | `BdisLoginService` | Login and logout for each target URL. |
 | `BdisWorkflow` | Document Query, Packet Print and Manipulate Image workflow. |
 | `EdgeDriverManager` | Driver preflight version check and Edge creation. |
@@ -128,133 +140,121 @@ Removed legacy test methods:
 
 These are replaced by `BdisLoginService`, `BdisWorkflow`, and `BdisTestRunner`. The infrastructure they used (evaluation, timing, error capture, screenshots, log, HTML report, environment status, global status, Power Automate payload) is preserved.
 
-## 4. `BDIS.side` command mapping
+## 4. `NEW BDIS.side` command mapping
 
-### 4.1 CANADA test
+The command numbers below are the exact indexes recorded in `NEW BDIS.side`. The legacy `BDIS.side` numbering is no longer used.
+
+### 4.1 CA-Full Test
 
 | # | SIDE command | Target / value | C# implementation |
 | --- | --- | --- | --- |
-| 0 | `open` | `https://www.brok.dis.ups.com/login.aspx` | `BdisLoginService.Login` -> `driver.Navigate().GoToUrl(url)` using `f5Url`. |
-| 1 | `setWindowSize` | `1957x1380` | `BdisTestRunner.RunEnvironment` -> `Window.Maximize()`. Exact size is not required by the workflow; maximize avoids resolution-specific failures. |
-| 2 | `click` | `css=.crModuleLabelLine:nth-child(4) > td` | No-op focus click; focus is implicit in the following field interactions. |
-| 3-6 | `click` / `doubleClick` | `id=MainContent_ebPassword` | `BdisLoginService.Login` -> `Click`, `Clear`, `SendKeys(password)`. |
-| 7 | `click` | `id=MainContent_ddlCountry` | `CountrySelectionService.SelectCountry` selects `Canada` deterministically even though the SIDE recording omits an explicit `select`. |
+| 0 | `setWindowSize` | `1400x900` | `BdisTestRunner.RunEnvironment` -> `Window.Maximize()`. Exact size is not required; maximize avoids resolution-specific failures. |
+| 1 | `open` | `https://www.brok.dis.ups.com/login.aspx` | `BdisLoginService.Login` -> `driver.Navigate().GoToUrl(url)` using `f5Url`. |
+| 2-3 | `click` / `type` | `id=MainContent_ebUserID` | `BdisLoginService.Login` -> `Click`, `Clear`, `SendKeys(username)`. |
+| 4-5 | `click` / `type` | `id=MainContent_ebPassword` | `BdisLoginService.Login` -> `Click`, `Clear`, `SendKeys(password)`. |
+| 6 | `click` | `css=tr:nth-child(10) > td` | No-op focus click; not replayed. |
+| 7 | `click` | `id=MainContent_ddlCountry` | `CountrySelectionService.SelectCountry` selects `Canada` deterministically even though the recording omits an explicit `select` for CA. |
 | 8 | `click` | `id=MainContent_btnLogin` | `BdisLoginService.Login` -> `WaitClickable(...).Click()`. |
-| 9 | `click` | `id=tbVal1_1` | `BdisWorkflow.DocumentQuerySearch` -> `Click`, `Clear`, `SendKeys(caShipmentNbr)`. |
-| 10 | `type` | `id=tbVal1_1` = `121429J4K3H` | `BdisWorkflow.DocumentQuerySearch` using `caShipmentNbr`. |
-| 11 | `click` | `css=.bdisForm` | No-op focus click. |
+| 9-10 | `click` / `type` | `id=tbVal1_1` = `121429J4K3H` | `BdisWorkflow.DocumentQuerySearch` -> `Click`, `Clear`, `SendKeys(caShipmentNbr)`. |
+| 11 | `click` | `id=btnSearch` | `BdisWorkflow.DocumentQuerySearch`. |
+| 12 | `click` | `id=MainContent_Checkbox1` | `BdisWorkflow.DocumentQueryPrint`. |
+| 13 | `click` | `id=MainContent_btnPrint` | `BdisWorkflow.DocumentQueryPrint`. |
+| 14 | `storeWindowHandle` | `root` | `BdisWorkflow.DocumentQueryPrint` records `driver.CurrentWindowHandle`. |
+| 15 | `selectWindow` | recorded print window | `BdisWorkflow.CloseNewWindowAndReturn` switches to the new handle. |
+| 16 | `pause` | `30000` | `CloseNewWindowAndReturn` sleeps `printWindowPauseSeconds` (default 30). |
+| 17 | `close` | - | `CloseNewWindowAndReturn` -> `driver.Close()`. |
+| 18 | `selectWindow` | `${root}` | `CloseNewWindowAndReturn` switches back to the main handle. |
+| 19 | `executeScript` | web server detection over `document.body.innerText` | `BdisWorkflow.DetectWebServer`. |
+| 20 | `echo` | `Server Detected "${webServer}"` | `BdisTestRunner` writes the detected server to the local log only. |
+| 21 | `if` | `document.body.innerText...includes("SU6BDISWEB5")` | `BdisWorkflow.IsEmailRequired` gates the email step. |
+| 22-27 | `click` / `type` | email form (`MainContent_btnEmail`, `txtEmailTo`, `txtEmailBody`, `BtnSend`) | `BdisWorkflow.DocumentQueryEmail`; body text is `BDIS E-mail Test`. |
+| 28 | `assertText` | `id=MainContent_lblMsg` = `E-mail successfully sent to <recipient>.` | `DocumentQueryEmail` waits for page source to contain the confirmation. |
+| 29-31 | `else` / `echo` / `end` | email skipped | `BdisTestRunner.RecordSkippedStep` writes a `SKIPPED` step; the workflow continues. |
+| 32 | `click` | `id=hlPacketPrint` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
+| 33-34 | `click` / `select` | `id=MainContent_PacketName` = `label=Commercial Invoice` | `BdisWorkflow.SelectPacketByName` using `CountryTestProfile.PacketNameLabel`. |
+| 35 | `type` | `id=MainContent_Box1` = `782717VVJ4B` | `BdisWorkflow.PacketPrintSelectAndSearch` using `caShipmentNbrPK`. |
+| 36 | `click` | `id=MainContent_GetPacketsBtn` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
+| 37 | `click` | `id=MainContent_Grid1_Remove_0` | `BdisWorkflow.PacketPrintPrint`. |
+| 38 | `click` | `id=MainContent_BtnPrint` | `BdisWorkflow.PacketPrintPrint`. |
+| 39 | `selectWindow` | recorded print window | `BdisWorkflow.CloseNewWindowAndReturn`. |
+| 40 | `pause` | `30000` | `CloseNewWindowAndReturn` sleeps `printWindowPauseSeconds`. |
+| 41 | `close` | - | `CloseNewWindowAndReturn`. |
+| 42 | `selectWindow` | `${root}` | `CloseNewWindowAndReturn`. |
+| 43 | `click` | `id=hlManipulateImage` | `BdisWorkflow.UploadImage`. |
+| 44 | `click` | `css=.formbuttonblue` | `BdisWorkflow.UploadImage` fallback only; the primary path targets the file input directly. |
+| 45 | `type` | `css=body > input` = `...\BDISImg` | `BdisWorkflow.UploadImage` attaches `ImageFilePath` (`BDISImg\Image.tif`) through CDP. The recording points to the folder; the script uses the file. |
+| 46 | `click` | `css=.fa-rotate-left` | `BdisWorkflow.EditImage`. |
+| 47 | `click` | `css=.fa-rotate-right` | `BdisWorkflow.EditImage`. |
+| 48 | `click` | `css=.fa-search-plus` | `BdisWorkflow.EditImage`. |
+| 49 | `click` | `css=.fa-search-minus` | `BdisWorkflow.EditImage`. |
+| 50 | `click` | `css=.checkbox-select > .ng-untouched` | `BdisWorkflow.DeleteImage` tries `.ng-untouched`, then falls back to `.checkbox-select input[type='checkbox']`. |
+| 51 | `click` | `css=.fa-trash` | `BdisWorkflow.DeleteImage`. |
+| 52 | `chooseOkOnNextConfirmation` | - | `BdisWorkflow.DeleteImage` waits for the alert. |
+| 53 | `assertConfirmation` | `Are you sure you want to delete the 1 selected image(s)?` | `BdisWorkflow.DeleteImage` validates `alert.Text` before accepting. |
+| 54 | `webdriverChooseOkOnVisibleConfirmation` | - | `BdisWorkflow.DeleteImage` -> `alert.Accept()`. |
+| 55 | `click` | `linkText=Log Out` | `BdisLoginService.Logout` prefers `lnkbLogOut`, then link text `Log Out`. |
+
+### 4.2 USA-Full Test
+
+| # | SIDE command | Target / value | C# implementation |
+| --- | --- | --- | --- |
+| 0 | `setWindowSize` | `1400x900` | `BdisTestRunner.RunEnvironment` -> `Window.Maximize()`. |
+| 1 | `open` | `https://www.brok.dis.ups.com/login.aspx` | `BdisLoginService.Login` using `f5Url`. |
+| 2-3 | `click` / `type` | `id=MainContent_ebUserID` | `BdisLoginService.Login`. |
+| 4-5 | `click` / `type` | `id=MainContent_ebPassword` | `BdisLoginService.Login`. |
+| 6 | `click` | `css=tr:nth-child(10) > td` | No-op focus click; not replayed. |
+| 7-8 | `click` / `select` | `id=MainContent_ddlCountry` = `label=United States` | `CountrySelectionService.SelectCountry` using `CountrySelectText`. |
+| 9 | `click` | `id=MainContent_btnLogin` | `BdisLoginService.Login`. |
+| 10-11 | `click` / `type` | `id=tbVal1_1` = `00R701G3FLT` | `BdisWorkflow.DocumentQuerySearch` using `usShipmentNbr`. |
 | 12 | `click` | `id=btnSearch` | `BdisWorkflow.DocumentQuerySearch`. |
 | 13 | `click` | `id=MainContent_Checkbox1` | `BdisWorkflow.DocumentQueryPrint`. |
 | 14 | `click` | `id=MainContent_btnPrint` | `BdisWorkflow.DocumentQueryPrint`. |
-| 15 | `storeWindowHandle` | `root` | `BdisWorkflow.DocumentQueryPrint` records `driver.CurrentWindowHandle`. |
-| 16 | `selectWindow` | recorded print window | `BdisWorkflow.CloseNewWindowAndReturn` switches to the new handle. |
-| 17 | `close` | - | `BdisWorkflow.CloseNewWindowAndReturn` -> `driver.Close()`. |
-| 18 | `selectWindow` | `root` | `BdisWorkflow.CloseNewWindowAndReturn` switches back to the main handle. |
-| 19 | `click` | `id=MainContent_btnEmail` | `BdisWorkflow.DocumentQueryEmail`. |
-| 20 | `click` | `id=MainContent_txtEmailTo` | `BdisWorkflow.DocumentQueryEmail` -> `Click`, `Clear`, `SendKeys(emailRecipient)`. |
-| 21 | `type` | `id=MainContent_txtEmailTo` = recipient | `BdisWorkflow.DocumentQueryEmail` using `emailRecipient`. |
-| 22 | `click` | `id=MainContent_txtEmailBody` | `BdisWorkflow.DocumentQueryEmail`. |
-| 23 | `type` | `id=MainContent_txtEmailBody` = `BDIS TEST` | `BdisWorkflow.DocumentQueryEmail`. |
-| 24 | `click` | `id=MainContent_BtnSend` | `BdisWorkflow.DocumentQueryEmail`. |
-| 25 | `click` | `css=#body td:nth-child(2)` | No-op focus click after send. |
-| 26-27 | `click` | `css=.bcopyright` | No-op focus clicks. |
-| 28 | `click` | `id=hlDocumentQuery` | `BdisWorkflow.DocumentQueryEmail` returns to Document Query for deterministic Packet Print navigation. |
-| 29 | `click` | `id=hlPacketPrint` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
-| 30 | `click` | `id=MainContent_PacketName` | `BdisWorkflow.PacketPrintSelectAndSearch` -> `SelectElement`. |
-| 31 | `select` | `id=MainContent_PacketName` = `label=Commercial Invoice` | `BdisWorkflow.SelectPacketByName` using `CountryTestProfile.PacketNameLabel`. |
-| 32 | `click` | `id=MainContent_Box1` | `BdisWorkflow.PacketPrintSelectAndSearch` -> `Click`, `Clear`, `SendKeys(caShipmentNbrPK)`. |
-| 33 | `type` | `id=MainContent_Box1` = `782717VVJ4B` | `BdisWorkflow.PacketPrintSelectAndSearch` using `caShipmentNbrPK`. |
-| 34 | `click` | `id=MainContent_GetPacketsBtn` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
-| 35 | `click` | `id=MainContent_Grid1_Remove_0` | `BdisWorkflow.PacketPrintPrint`. |
-| 36 | `click` | `id=MainContent_BtnPrint` | `BdisWorkflow.PacketPrintPrint`. |
-| 37 | `selectWindow` | recorded print window | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 38 | `close` | - | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 39 | `selectWindow` | `root` | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 40 | `click` | `id=hlManipulateImage` | `BdisWorkflow.UploadImage`. |
-| 41 | `click` | `css=.formbuttonblue` | `BdisWorkflow.UploadImage` fallback only; the primary path sends the file directly to `input[type='file']`. |
-| 42 | `type` | `css=body > input` = `C:\fakepath\Image.tif` | `BdisWorkflow.UploadImage` sends `ImageFilePath` (`BDISImg\Image.tif`). |
-| 43 | `click` | `css=.iv-viewer > img` | `BdisWorkflow.EditImage`. |
-| 44 | `click` | `css=.fa-rotate-left` | `BdisWorkflow.EditImage`. |
-| 45 | `click` | `css=.fa-rotate-right` | `BdisWorkflow.EditImage`. |
-| 46 | `click` | `css=.fa-search-plus` | `BdisWorkflow.EditImage`. |
-| 47 | `click` | `css=.fa-search-minus` | `BdisWorkflow.EditImage`. |
-| 48 | `click` | `css=.checkbox-select > .ng-untouched` | `BdisWorkflow.DeleteImage` tries `.ng-untouched`, then falls back to `.checkbox-select input[type='checkbox']`. |
-| 49 | `chooseOkOnNextConfirmation` | - | `BdisWorkflow.DeleteImage` waits for the alert. |
-| 50 | `click` | `css=.fa-trash` | `BdisWorkflow.DeleteImage`. |
-| 51 | `assertConfirmation` | `Are you sure you want to delete the 1 selected image(s)?` | `BdisWorkflow.DeleteImage` validates `alert.Text` before accepting. |
-| 52 | `webdriverChooseOkOnVisibleConfirmation` | - | `BdisWorkflow.DeleteImage` -> `alert.Accept()`. |
-| 53 | `click` | `linkText=Log Out` | `BdisLoginService.Logout` prefers `lnkbLogOut`, then link text `Log Out`. |
-| 54-55 | `type` | `MainContent_ebUserID` / `MainContent_ebPassword` | Recorded preparation for the next login. `BdisLoginService.Login` performs these actions at the start of each country run; they are not replayed after logout. |
+| 15 | `storeWindowHandle` | `root` | `BdisWorkflow.DocumentQueryPrint`. |
+| 16 | `selectWindow` | recorded print window | `BdisWorkflow.CloseNewWindowAndReturn`. |
+| 17 | `pause` | `30000` | `CloseNewWindowAndReturn` sleeps `printWindowPauseSeconds`. |
+| 18 | `close` | - | `CloseNewWindowAndReturn`. |
+| 19 | `selectWindow` | `${root}` | `CloseNewWindowAndReturn`. |
+| 20 | `executeScript` | web server detection | `BdisWorkflow.DetectWebServer`. |
+| 21 | `echo` | `Server Detected "${webServer}"` | Local log only. |
+| 22 | `if` | `...includes("SU6BDISWEB5")` | `BdisWorkflow.IsEmailRequired`. |
+| 23-28 | `click` / `type` | email form | `BdisWorkflow.DocumentQueryEmail`; body `BDIS E-mail Test`. |
+| 29 | `assertText` | `id=MainContent_lblMsg` | `DocumentQueryEmail` wait condition. |
+| 30-32 | `else` / `echo` / `end` | email skipped | `BdisTestRunner.RecordSkippedStep` (`SKIPPED`). |
+| 33 | `click` | `id=hlPacketPrint` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
+| 34-35 | `click` / `select` | `id=MainContent_PacketName` = `label=CI - Commerical Invoice` | `BdisWorkflow.SelectPacketByName` (application spelling preserved). |
+| 36 | `type` | `id=MainContent_Box1` = `A20743KT8MJ` | `BdisWorkflow.PacketPrintSelectAndSearch` using `usShipmentNbrPK`. |
+| 37 | `click` | `id=MainContent_GetPacketsBtn` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
+| 38 | `click` | `id=MainContent_Grid1_Remove_0` | `BdisWorkflow.PacketPrintPrint`. |
+| 39 | `click` | `id=MainContent_BtnPrint` | `BdisWorkflow.PacketPrintPrint`. |
+| 40 | `selectWindow` | recorded print window | `CloseNewWindowAndReturn`. |
+| 41 | `pause` | `30000` | `CloseNewWindowAndReturn` sleeps `printWindowPauseSeconds`. |
+| 42 | `close` | - | `CloseNewWindowAndReturn`. |
+| 43 | `selectWindow` | `${root}` | `CloseNewWindowAndReturn`. |
+| 44 | `click` | `id=hlManipulateImage` | `BdisWorkflow.UploadImage`. |
+| 45 | `click` | `css=.formbuttonblue` | `BdisWorkflow.UploadImage` fallback only. |
+| 46 | `type` | `css=body > input` = `...\BDISImg` | `BdisWorkflow.UploadImage` attaches `ImageFilePath` through CDP. |
+| 47-50 | `click` | `.fa-rotate-left`, `.fa-rotate-right`, `.fa-search-plus`, `.fa-search-minus` | `BdisWorkflow.EditImage`; no preview-image click. |
+| 51 | `click` | `css=.checkbox-select > .ng-untouched` | `BdisWorkflow.DeleteImage` with checkbox fallback. |
+| 52 | `click` | `css=.fa-trash` | `BdisWorkflow.DeleteImage`. |
+| 53 | `chooseOkOnNextConfirmation` | - | `BdisWorkflow.DeleteImage` waits for the alert. |
+| 54 | `assertConfirmation` | `Are you sure you want to delete the 1 selected image(s)?` | `BdisWorkflow.DeleteImage` validates `alert.Text`. |
+| 55 | `webdriverChooseOkOnVisibleConfirmation` | - | `BdisWorkflow.DeleteImage` -> `alert.Accept()`. |
+| 56 | `click` | `linkText=Log Out` | `BdisLoginService.Logout`. |
 
-### 4.2 US test
+### 4.3 Intentional deviations from `NEW BDIS.side`
 
-| # | SIDE command | Target / value | C# implementation |
-| --- | --- | --- | --- |
-| 0 | `open` | `https://www.brok.dis.ups.com/login.aspx` | `BdisLoginService.Login` using `f5Url`. |
-| 1 | `setWindowSize` | `1957x1380` | `BdisTestRunner.RunEnvironment` -> `Window.Maximize()`. |
-| 2 | `click` | `css=html` | No-op focus click. |
-| 3 | `click` | `id=MainContent_ebPassword` | `BdisLoginService.Login` -> `Click`, `Clear`, `SendKeys(password)`. |
-| 4 | `click` | `css=.crModuleLabelLine:nth-child(6) > td` | No-op focus click. |
-| 5 | `click` | `id=MainContent_ddlCountry` | `CountrySelectionService.SelectCountry`. |
-| 6 | `select` | `id=MainContent_ddlCountry` = `label=United States` | `CountrySelectionService.SelectCountry` using `CountrySelectText`. |
-| 7 | `click` | `id=MainContent_btnLogin` | `BdisLoginService.Login`. |
-| 8 | `click` | `id=tbVal1_1` | `BdisWorkflow.DocumentQuerySearch` -> `Click`, `Clear`, `SendKeys(usShipmentNbr)`. |
-| 9 | `type` | `id=tbVal1_1` = `00R701G3FLT` | `BdisWorkflow.DocumentQuerySearch` using `usShipmentNbr`. |
-| 10 | `click` | `id=btnSearch` | `BdisWorkflow.DocumentQuerySearch`. |
-| 11 | `click` | `id=MainContent_Checkbox1` | `BdisWorkflow.DocumentQueryPrint`. |
-| 12 | `click` | `id=MainContent_btnPrint` | `BdisWorkflow.DocumentQueryPrint`. |
-| 13 | `storeWindowHandle` | `root` | `BdisWorkflow.DocumentQueryPrint` records `driver.CurrentWindowHandle`. |
-| 14 | `selectWindow` | recorded print window | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 15 | `close` | - | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 16 | `selectWindow` | `root` | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 17 | `click` | `id=MainContent_btnEmail` | `BdisWorkflow.DocumentQueryEmail`. |
-| 18 | `click` | `id=MainContent_txtEmailTo` | `BdisWorkflow.DocumentQueryEmail`. |
-| 19 | `type` | `id=MainContent_txtEmailTo` = recipient | `BdisWorkflow.DocumentQueryEmail` using `emailRecipient`. |
-| 20 | `click` | `id=MainContent_txtEmailBody` | `BdisWorkflow.DocumentQueryEmail`. |
-| 21 | `type` | `id=MainContent_txtEmailBody` = `BDIS TEST` | `BdisWorkflow.DocumentQueryEmail`. |
-| 22 | `click` | `css=#MainContent_emailTable tr:nth-child(7) > td` | No-op focus click. |
-| 23 | `click` | `id=MainContent_BtnSend` | `BdisWorkflow.DocumentQueryEmail`. |
-| 24 | `click` | `css=.content-wrapper` | No-op focus click. |
-| 25-26 | `click` | `css=.bcopyright` | No-op focus clicks. |
-| 27 | `click` | `css=body` | No-op focus click. |
-| 28 | `click` | `id=hlPacketPrint` | `BdisWorkflow.PacketPrintSelectAndSearch`; the method also returns to Document Query first after the email step. |
-| 29 | `click` | `id=MainContent_PacketName` | `BdisWorkflow.PacketPrintSelectAndSearch` -> `SelectElement`. |
-| 30 | `select` | `id=MainContent_PacketName` = `label=CI - Commerical Invoice` | `BdisWorkflow.SelectPacketByName` using `CountryTestProfile.PacketNameLabel` (application spelling preserved). |
-| 31 | `click` | `id=MainContent_Box1` | `BdisWorkflow.PacketPrintSelectAndSearch` -> `Click`, `Clear`, `SendKeys(usShipmentNbrPK)`. |
-| 32 | `type` | `id=MainContent_Box1` = `A20743KT8MJ` | `BdisWorkflow.PacketPrintSelectAndSearch` using `usShipmentNbrPK`. |
-| 33 | `click` | `css=tr:nth-child(14) > td:nth-child(2)` | No-op focus click. |
-| 34 | `click` | `id=MainContent_GetPacketsBtn` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
-| 35 | `click` | `id=MainContent_Grid1_Remove_0` | `BdisWorkflow.PacketPrintPrint`. |
-| 36 | `click` | `id=MainContent_BtnPrint` | `BdisWorkflow.PacketPrintPrint`. |
-| 37 | `selectWindow` | recorded print window | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 38 | `close` | - | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 39 | `selectWindow` | `root` | `BdisWorkflow.CloseNewWindowAndReturn`. |
-| 40 | `click` | `id=hlManipulateImage` | `BdisWorkflow.UploadImage`. |
-| 41 | `click` | `css=.formbuttonblue` | `BdisWorkflow.UploadImage` fallback only. |
-| 42 | `type` | `css=input:nth-child(3)` = `C:\fakepath\Image.tif` | `BdisWorkflow.UploadImage` sends `ImageFilePath`. |
-| 43 | `click` | `css=.fa-rotate-left` | `BdisWorkflow.EditImage`. |
-| 44 | `click` | `css=.fa-rotate-right` | `BdisWorkflow.EditImage`. |
-| 45 | `click` | `css=.fa-search-plus` | `BdisWorkflow.EditImage`. |
-| 46 | `click` | `css=.fa-search-minus` | `BdisWorkflow.EditImage`. |
-| 47 | `click` | `css=.checkbox-select > .ng-untouched` | `BdisWorkflow.DeleteImage` with checkbox fallback. |
-| 48 | `chooseOkOnNextConfirmation` | - | `BdisWorkflow.DeleteImage` waits for the alert. |
-| 49 | `click` | `css=.fa-trash` | `BdisWorkflow.DeleteImage`. |
-| 50 | `assertConfirmation` | `Are you sure you want to delete the 1 selected image(s)?` | `BdisWorkflow.DeleteImage` validates `alert.Text`. |
-| 51 | `webdriverChooseOkOnVisibleConfirmation` | - | `BdisWorkflow.DeleteImage` -> `alert.Accept()`. |
-| 52 | `click` | `linkText=Log Out` | `BdisLoginService.Logout`. |
-| 53-54 | `type` | `MainContent_ebUserID` / `MainContent_ebPassword` | Recorded preparation for the next login; handled by `BdisLoginService.Login`. |
-
-### 4.3 Intentional deviations from the SIDE recording
-
-- Focus-only clicks (`css=html`, `.bcopyright`, `.content-wrapper`, body cells, password focus clicks) are not replayed because `Click`, `Clear` and `SendKeys` already focus the target and the clicks do not change application state.
-- `setWindowSize 1957x1380` is implemented as `Window.Maximize()` to avoid resolution-dependent layout failures.
-- Canada is explicitly selected in the rewritten script even though the Canada recording omits the `select` command. This makes the country deterministic and enables the same workflow for every URL.
-- The US recording goes directly to `hlPacketPrint` after the email step. The rewritten workflow returns to Document Query first, then goes to Packet Print. This is behaviorally equivalent and more deterministic.
-- The SIDE file path `C:\fakepath\Image.tif` is a browser placeholder. The script sends the real configured path `C:\Selenium\BDISWEB-SANDY\BDISImg\Image.tif`.
-- The Canada and US file-input selectors differ in the recording (`body > input` vs `input:nth-child(3)`). The script uses `input[type='file']` first and falls back to the upload button, which covers both recordings.
+- Focus-only clicks (`css=tr:nth-child(10) > td`) are not replayed because `Click`, `Clear` and `SendKeys` already focus the target and the click does not change application state.
+- `setWindowSize 1400x900` is implemented as `Window.Maximize()` to avoid resolution-dependent layout failures.
+- Canada is explicitly selected even though the CA recording omits the `select` command. This makes the country deterministic and lets the same workflow run for every URL.
+- The recorded `pause 30000` before closing a print preview is implemented as `printWindowPauseSeconds`; the default is 30 seconds.
+- `NEW BDIS.side` no longer clicks `.iv-viewer > img` before rotating. The script only waits for the preview to be visible.
+- The image `type` target in the recording points to the `BDISImg` folder. The script sends the real file path `C:\Selenium\BDISWEB-SANDY\BDISImg\Image.tif`.
+- Selenium IDE reports `file uploading is only supported in chrome at this time` for `type` on a file input. The script bypasses that limitation with CDP `DOM.setFileInputFiles`, then falls back to `SendKeys` and a JavaScript `DataTransfer`.
+- The email step is not skipped by configuration. It is skipped only when the page text does not report `SU6BDISWEB5`, exactly like the `if` command in the recording.
 - The delete confirmation is handled by an explicit alert wait and `Accept()`, then the text is validated. This is equivalent to `chooseOkOnNextConfirmation` plus `assertConfirmation`.
 
-## 5. Power Automate compatibility assessment
+
+## 5. Behavior and Power Automate compatibility
 
 ### 5.1 Existing flow
 
@@ -364,33 +364,49 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - Other Selenium tests that send the same object envelope are unaffected.
 - If another test sends a root array directly, this refactoring does not change that behavior.
 
-### 5.6 Non-fatal email warnings
+### 5.6 Conditional email test
 
-- The Document Query email step runs on every environment.
-- Some environments are served by backends that cannot send mail. The footer may report a different web server than the configured URL, so the email confirmation never arrives.
-- `emailWarningEnvironments` lists the environments where an email failure is a non-fatal `WARNING` instead of a hard `FAILED`. The deployed value is `F5,SU6BDISWEB2,SU6BDISWEB3,SU6BDISWEB4`.
-- A warning:
-  - keeps `CountryTestResult`, `EnvironmentTestResult` and `globalStatus` as `PASSED`;
-  - writes `WARNING` to the local log and shows a yellow `Warning` badge in the local HTML report;
-  - does not populate the webhook `error` field and is not sent to Power Automate;
-  - lets the workflow continue with Packet Print, Manipulate Image and Logout.
-- `SU6BDISWEB5` is not listed, so its email failure remains strict.
-- `DocumentQueryEmail` always attempts to return to Document Query in a `finally` block, so a failed email cannot leave the email form open and break Packet Print.
-- `emailWarningTimeoutSeconds` (default: `pageLoadTimeoutSeconds`) shortens the confirmation wait only on warning environments.
+- `NEW BDIS.side` does not run the email test on every environment. After the print preview closes, it detects the web server from `document.body.innerText` using the list `SU6BDISWEB2`, `SU6BDISWEB3`, `SU6BDISWEB4`, `SU6BDISWEB5`.
+- The email step runs only when the detected server is `SU6BDISWEB5`, matching the recording's `if` condition.
+- On every other server (including `F5` and `UNKNOWN`) the step is recorded as `SKIPPED`:
+  - it keeps `CountryTestResult`, `EnvironmentTestResult` and `globalStatus` unchanged;
+  - it is written to the local log and shown with a gray `SKIPPED` badge in the HTML report;
+  - it is not added to the webhook `error` field and is not an error notification;
+  - the workflow continues with Packet Print, Manipulate Image and Logout.
+- There is no `emailWarningEnvironments` or `emailWarningTimeoutSeconds` setting anymore. The old optional-step/WARNING mechanism was removed, so the email step is now either executed and strict, or intentionally skipped.
+- The email body is `BDIS E-mail Test`, matching `NEW BDIS.side`.
+- `DocumentQueryEmail` always attempts to return to Document Query in a `finally` block, so an executed email step cannot leave the email form open and break Packet Print.
 - After login, the effective URL and the `.bcopyright` footer text are written to the local log for diagnostics only. They are not added to the HTML report.
 
-### 5.7 Webhook diagnostics and retries
+### 5.7 Edge image upload
+
+- The SIDE `type` command on a file input fails in Microsoft Edge with `file uploading is only supported in chrome at this time`. That message comes from Selenium IDE, not from the browser driver.
+- `UploadImage` therefore uses the Chromium DevTools Protocol directly:
+  1. `Page.enable` and `Page.setInterceptFileChooserDialog` to prevent the native Windows dialog from blocking the session.
+  2. `DOM.getDocument` and `DOM.querySelector` to resolve the `input[type='file']` node.
+  3. `DOM.setFileInputFiles` to attach `Image.tif` without automating the native dialog.
+- Fallbacks, in order: `WebElement.SendKeys` on a temporarily visible input, then a JavaScript `DataTransfer` assignment with `input`/`change` events.
+- The preview `.iv-viewer > img` must be visible before continuing.
+- A configurable pause (`imageUploadPauseSeconds`, default 60) runs after the upload is confirmed and before the rotation/zoom commands, so the image widget can finish processing.
+- Browser policy is unchanged: the test still runs in Microsoft Edge.
+
+### 5.8 Webhook diagnostics, retries and proxy
 
 - The reporter logs the endpoint host, the exact payload and the HTTP status plus response body.
 - Transient failures (network errors, timeouts, HTTP 429 and HTTP 5xx) are retried up to 3 times with a short backoff.
+- `webhookProxyHost` and `webhookProxyPort` configure a proxy that applies only to the webhook HTTP request. The deployed defaults are `10.138.112.254` and `9191`. An empty host uses a direct connection.
+- The proxy is not applied to the browser session and does not change how the target site is reached.
 - HTML report generation is isolated from webhook delivery: a report failure does not prevent the notification.
 - The payload envelope and field names are unchanged.
 
-### 5.8 Dialog foreground activation
+### 5.9 Dialog foreground activation and UPS branding
 
 - The mode selection, EdgeDriver help and error dialogs set `ShowInTaskbar`, restore the normal window state and call `SetForegroundWindow`, `BringWindowToTop` and `AttachThreadInput`.
 - The primary button receives focus when the dialog opens.
 - This keeps the dialogs visible when LINQPad is not the active application.
+- All three dialogs use the shared `UpsBranding` style: brown `#351C15` header, gold `#FFB500` accent and border, light `#F5F3F0` background, and the UPS logo in the top-right corner.
+- Primary and secondary buttons use the same brown/gold palette.
+- The logo is embedded as a Base64 PNG, so the dialogs and the HTML report do not depend on external files.
 
 ## 6. Manual validation checklist
 
@@ -400,7 +416,9 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] `f5Url`, `webServerUrl2..5`, `username`, `password`, `emailRecipient` are present.
 - [ ] `caShipmentNbr`, `caShipmentNbrPK`, `usShipmentNbr`, `usShipmentNbrPK` are present.
 - [ ] `powerAutomateWebhookUrl` is present if webhook reporting is required.
-- [ ] `emailWarningEnvironments` and `emailWarningTimeoutSeconds` are present.
+- [ ] `imageUploadPauseSeconds` (default 60) and `printWindowPauseSeconds` (default 30) are present or intentionally omitted to use defaults.
+- [ ] `webhookProxyHost` and `webhookProxyPort` are set correctly, or the host is empty to use a direct connection.
+- [ ] `emailWarningEnvironments` and `emailWarningTimeoutSeconds` are absent.
 - [ ] `BDISImg\Image.tif` exists.
 - [ ] No obsolete keys remain: `url1..url5`, `usrName1..usrPass5`, `usrNameTxtBox`, `usrPassTxtBox`, `loginBtn`, `countryLogin`, `countryCode`, `shipStartDate`, `shipEndDate`, `dutyType`, `mngAcctUser`, `brkrCode`, `newBrokName`.
 - [ ] A missing or empty required key stops the run with a configuration error and no browser launch.
@@ -408,24 +426,30 @@ Country-level detail is aggregated into the environment `error` field, which is 
 ### Execution mode
 
 - [ ] Startup dialog offers `F5 / File Server Test` and `Full Test (All URLs)`.
+- [ ] The startup dialog shows the UPS header, the logo in the top-right corner and the brown/gold border.
 - [ ] The startup dialog opens in the foreground with the F5 button focused.
 - [ ] Cancelling the dialog exits without launching Edge.
 - [ ] `F5 / File Server Test` runs exactly one environment (`f5Url`) with webKey `F5`.
 - [ ] `Full Test` runs five environments: `f5Url`, `webServerUrl2..5` with webKeys `F5`, `SU6BDISWEB2..5`.
+- [ ] The EdgeDriver help and error dialogs also show the UPS header and logo.
 
 ### Per environment and country
 
 - [ ] Canada runs first, then United States, for every selected URL.
 - [ ] Login uses the universal credentials and the configured country.
-- [ ] Country selection is confirmed from the `CountryCode=CA` / `CountryCode=US` link.
+- [ ] After login, the detected web server is logged locally.
+- [ ] When the page reports `SU6BDISWEB5`, the email step runs with body `BDIS E-mail Test` and expects `E-mail successfully sent to <recipient>.`
+- [ ] When the page does not report `SU6BDISWEB5`, the email step is logged and shown as `SKIPPED` and the workflow continues.
+- [ ] A skipped email never changes the environment or global status and never appears in the webhook `error` field.
 - [ ] Document Query searches the configured shipment and prints.
-- [ ] Document Query sends the email to the configured recipient and body `BDIS TEST`.
-- [ ] On `F5`, `SU6BDISWEB2`, `SU6BDISWEB3` and `SU6BDISWEB4`, an email failure is shown as `Warning`, the workflow continues and the environment stays `PASSED`.
-- [ ] On `SU6BDISWEB5`, an email failure is still a hard failure.
-- [ ] After an email warning, Packet Print, Manipulate Image and Logout still run.
+- [ ] Each print preview stays open for about 30 seconds before it is closed.
 - [ ] Packet Print selects `Commercial Invoice` for Canada and `CI - Commerical Invoice` for the US.
 - [ ] Packet Print searches the configured packet shipment, removes the row and prints.
-- [ ] Manipulate Image uploads `Image.tif`, rotates left/right, zooms in/out, deletes with confirmation, and validates the confirmation text.
+- [ ] Manipulate Image uploads `Image.tif` in Microsoft Edge without a native file dialog.
+- [ ] The image preview is visible before the rotation commands.
+- [ ] The script waits about 60 seconds after the upload and before rotating/zooming.
+- [ ] Rotation and zoom controls work without clicking the preview image first.
+- [ ] The image is deleted, the confirmation text is validated and the alert is accepted.
 - [ ] Logout returns to the login page; the next country logs in cleanly.
 - [ ] A failure in one country does not prevent the other country from running when the browser is still alive.
 - [ ] A dead browser is recreated before the next country.
@@ -439,9 +463,11 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] `log\BDISWebApplication.txt` is updated with tab-separated step rows.
 - [ ] `log\BDISWebApplication_<timestamp>.html` is generated for success, functional failure, and prerequisite failure.
 - [ ] Screenshots are saved under `log\`.
+- [ ] The HTML report shows the UPS logo, brown header and gold accents.
+- [ ] The HTML report has no target URL column and no target URL footer.
 - [ ] Prerequisite failures appear as `NOT_EXECUTED` in the local report.
-- [ ] Email warnings show a yellow `Warning` badge and are counted in the summary card.
-- [ ] Email warnings never appear in the webhook payload.
+- [ ] Skipped email steps show a gray `SKIPPED` badge and are counted in the summary card.
+- [ ] Skipped email steps never appear in the webhook payload.
 - [ ] Environment-level failures appear as an `Environment` pseudo-country row in the local report and log.
 - [ ] No username, password, webhook URL or recipient appears in the log, HTML report, screenshots, exception text or webhook payload.
 
@@ -461,6 +487,8 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] `FilasTarjetas` is built for the environment rows.
 - [ ] The Adaptive Card renders and shows the expected status.
 - [ ] A failed environment includes the aggregated country failure in `error`.
+- [ ] When `webhookProxyHost` is set, the request is delivered through `webhookProxyHost:webhookProxyPort`.
+- [ ] When `webhookProxyHost` is empty, the request uses a direct connection.
 - [ ] A prerequisite failure sends no webhook.
 
 ## 7. Rollback procedure
@@ -476,19 +504,24 @@ Country-level detail is aggregated into the environment `error` field, which is 
 
 ## 8. Assumptions and unresolved selectors
 
-These items were taken from `BDIS.side` and the existing script but could not be verified against the live application in the current macOS environment:
+These items were taken from `NEW BDIS.side` and the existing script but could not be verified against the live application in the current macOS environment:
 
 - The country dropdown accepts `Canada` and `United States` by visible text. `CountrySelectionService` falls back to value `CA` / `US` and partial text.
 - The Packet Print labels are exactly `Commercial Invoice` and `CI - Commerical Invoice`. The US spelling is preserved. `SelectPacketByName` falls back to partial text.
 - Login success is detected by `hlDocumentQuery` or `tbVal1_1`.
 - The email success message is `E-mail successfully sent to <recipient>.` and is used as a wait condition.
-- The file input may be present immediately, hidden, or created only after clicking `.formbuttonblue`. `UploadImage` implements direct `SendKeys`, a button fallback, and a JavaScript visibility fallback.
+- Web server detection reads `document.body.innerText`. If the text cannot be read, the server is reported as `UNKNOWN` and the email step is skipped.
+- The file input may be present immediately, hidden, or created only after clicking `.formbuttonblue`. `UploadImage` uses CDP `DOM.setFileInputFiles`, then `SendKeys`, then a JavaScript `DataTransfer` fallback.
+- CDP file upload requires a Chromium-based driver (Microsoft Edge). The DevTools session is obtained from `EdgeDriver.GetDevToolsSession()`.
+- The 60-second image pause and the 30-second print-preview pause make both countries slower. They are configurable through `imageUploadPauseSeconds` and `printWindowPauseSeconds`.
 - The delete confirmation is a native JavaScript alert with the exact text `Are you sure you want to delete the 1 selected image(s)?`.
 - The image selection control may be `.checkbox-select > .ng-untouched` or `.checkbox-select input[type='checkbox']`; both are supported.
 - Print actions open a new window that must be closed and followed by a return to the main handle.
 - Logout exposes `lnkbLogOut` or a `Log Out` link.
 - `su6bdisweb2..su6bdisweb5` must be resolvable from the test machine (intranet, DNS, VPN, or hosts file).
+- The webhook proxy must be reachable from the test machine. A wrong host or port makes the notification fail after the retry loop; the test result itself is unaffected.
 - LINQPad 8 must support the `<Reference>System.Windows.Forms</Reference>` directive in a Program query. The script intentionally does not use a `#r` directive for this framework assembly.
 - The WinForms dialogs require Windows and an STA thread; the current environment is macOS, so live dialog behavior was not executed.
+- The UPS logo is embedded as a Base64 PNG derived from the official mark. Rendering was checked as an image asset, but the WinForms dialogs were not executed on Windows.
 - The existing Power Automate flow consumes the preserved object envelope and reads the `results` array for Parse JSON. This is the one contract item that must be confirmed in the flow before production use.
 - The deployed base directory is `C:\Selenium\BDISWEB-SANDY`. The script reads `Config.properties` and `BDISImg\Image.tif` from that location, matching the original deployment layout.
