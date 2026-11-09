@@ -628,7 +628,7 @@ public static class UpsBranding
         {
             Dock = DockStyle.Right,
             Width = 104,
-            BackColor = Color.White,
+            BackColor = Color.Transparent,
             Padding = new Padding(8)
         };
 
@@ -637,7 +637,7 @@ public static class UpsBranding
             Dock = DockStyle.Fill,
             Image = LoadLogo(),
             SizeMode = PictureBoxSizeMode.Zoom,
-            BackColor = Color.White
+            BackColor = Color.Transparent
         };
 
         logoPanel.Controls.Add(logo);
@@ -704,7 +704,7 @@ public static class HtmlReportGenerator
         sb.Append(".header-title h2 { color: " + UpsBranding.Gold + "; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 0.3px; }");
         sb.Append(".header-subtitle { color: #F5F3F0; margin-top: 6px; font-size: 14px; }");
         sb.Append(".header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }");
-        sb.Append(".ups-logo { height: 54px; width: auto; background: #FFFFFF; border-radius: 8px; padding: 6px; }");
+        sb.Append(".ups-logo { height: 54px; width: auto; background: transparent; border-radius: 8px; padding: 6px; }");
         sb.Append(".timestamp { color: #F5F3F0; font-size: 13px; text-align: right; }");
         sb.Append(".summary-deck { display: flex; gap: 18px; margin-bottom: 28px; flex-wrap: wrap; }");
         sb.Append(".card { flex: 1; min-width: 190px; background: #FFFFFF; border-radius: 10px; padding: 16px 20px; box-shadow: 0 4px 12px rgba(53,28,21,0.10); border-left: 6px solid " + UpsBranding.Brown + "; }");
@@ -1609,11 +1609,39 @@ public sealed class BdisWorkflow
     {
         wait.WaitClickable(By.Id("hlPacketPrint")).Click();
 
+        // Wait for the Packet Print page to finish loading before reading
+        // the country context or the packet list.
+        wait.WaitVisible(By.Id("MainContent_PacketName"));
+
+        // Diagnostic: the packet list is country-specific. Log the code so a
+        // mismatch (e.g. US receiving CA's list) is visible in the run log.
+        var countryCode = "unknown";
+        try
+        {
+            var packetPrintLink = driver.FindElements(By.Id("hlPacketPrint")).FirstOrDefault();
+            var href = packetPrintLink?.GetAttribute("href") ?? "";
+            var match = Regex.Match(href, @"[?&]CountryCode=([^&]+)", RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                countryCode = Uri.UnescapeDataString(match.Groups[1].Value);
+            }
+        }
+        catch
+        {
+            // Best-effort diagnostic only.
+        }
+        _logger.LogInfo($"Packet Print page loaded for {profile.DisplayName}: CountryCode={countryCode}.");
+
         // NEW BDIS.side clicks the packet list before selecting a value. That
         // click triggers the postback that populates the country-specific
         // option list; omitting it leaves the control empty or stale.
         wait.WaitClickable(By.Id("MainContent_PacketName")).Click();
-        SelectPacketByName(driver, profile.PacketNameLabel);
+
+        // Give the postback time to repopulate the list before reading it.
+        // Reading immediately can capture a partial/stale list.
+        Thread.Sleep(2000);
+
+        SelectPacketByName(driver, profile.PacketNameLabel, countryCode);
 
         var shipmentBox = wait.WaitVisible(By.Id("MainContent_Box1"));
         shipmentBox.Click();
@@ -1979,15 +2007,42 @@ public sealed class BdisWorkflow
     /// recorded label. Matching is tolerant of the "Commerical"/"Commercial"
     /// spelling difference between the recording and the live application.
     /// </summary>
-    private static void SelectPacketByName(IWebDriver driver, string packetName)
+    private static void SelectPacketByName(IWebDriver driver, string packetName, string countryCode = "unknown")
     {
         List<string> optionTexts;
         var optionIndex = WaitForPacketOptionIndex(driver, packetName, 20, out optionTexts);
 
         if (optionIndex < 0)
         {
+            // The country-specific list is populated by a postback. If the
+            // first click did not repopulate it, trigger the postback and retry
+            // before failing the step.
+            TriggerPacketListRefresh(driver);
+            optionIndex = WaitForPacketOptionIndex(driver, packetName, 10, out optionTexts);
+        }
+
+        if (optionIndex < 0)
+        {
+            // Last safety net: reload the packet print page once and wait for
+            // the list to be rebuilt from the current country context.
+            try
+            {
+                driver.Navigate().Refresh();
+            }
+            catch
+            {
+                // Best-effort recovery only.
+            }
+
+            optionIndex = WaitForPacketOptionIndex(driver, packetName, 15, out optionTexts);
+        }
+
+        if (optionIndex < 0)
+        {
             throw new Exception(
-                $"Packet type '{packetName}' was not found in the packet name list. Available options: {string.Join(", ", optionTexts)}.");
+                $"Packet type '{packetName}' was not found in the packet name list. "
+                + $"CountryCode={countryCode}. "
+                + $"Option count: {optionTexts.Count}. Available options: {string.Join(", ", optionTexts)}.");
         }
 
         try
@@ -2006,7 +2061,8 @@ public sealed class BdisWorkflow
             if (optionIndex < 0)
             {
                 throw new Exception(
-                    $"Packet type '{packetName}' was not found after the packet list refreshed. Available options: {string.Join(", ", optionTexts)}.");
+                    $"Packet type '{packetName}' was not found after the packet list refreshed. "
+                    + $"Option count: {optionTexts.Count}. Available options: {string.Join(", ", optionTexts)}.");
             }
 
             var refreshedSelect = new SelectElement(driver.FindElement(By.Id("MainContent_PacketName")));
@@ -2059,11 +2115,33 @@ public sealed class BdisWorkflow
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         optionTexts = new List<string>();
 
+        var previousCount = -1;
+        var stablePolls = 0;
+
         while (DateTime.UtcNow < deadline)
         {
-            optionTexts = GetPacketOptionTexts(driver);
+            var current = GetPacketOptionTexts(driver);
+
+            // Track list stabilization: the postback repopulates the
+            // dropdown in stages. Only trust a read once the option count
+            // is identical across two consecutive polls.
+            if (current.Count > 0 && current.Count == previousCount)
+            {
+                stablePolls++;
+            }
+            else
+            {
+                stablePolls = 0;
+            }
+            previousCount = current.Count;
+
+            optionTexts = current;
+
+            var listStable = stablePolls >= 1;
+            var nearDeadline = (deadline - DateTime.UtcNow).TotalSeconds < 3;
+
             var optionIndex = FindPacketOptionIndex(optionTexts, packetName);
-            if (optionIndex >= 0)
+            if (optionIndex >= 0 && (listStable || nearDeadline))
             {
                 return optionIndex;
             }
@@ -2072,6 +2150,34 @@ public sealed class BdisWorkflow
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// Re-triggers the packet list postback without selecting a value. This
+    /// mirrors the click recorded in NEW BDIS.side and asks the server to
+    /// rebuild the options for the active country.
+    /// </summary>
+    private static void TriggerPacketListRefresh(IWebDriver driver)
+    {
+        try
+        {
+            var selectElement = driver.FindElements(By.Id("MainContent_PacketName")).FirstOrDefault();
+            if (selectElement == null)
+            {
+                return;
+            }
+
+            selectElement.Click();
+            ((IJavaScriptExecutor)driver).ExecuteScript(
+                "var select = arguments[0];"
+                + "select.dispatchEvent(new Event('change', { bubbles: true }));",
+                selectElement);
+        }
+        catch
+        {
+            // Best-effort recovery. The caller reports the available options
+            // when the list still does not contain the requested packet.
+        }
     }
 
     private static List<string> GetPacketOptionTexts(IWebDriver driver)
@@ -2875,23 +2981,18 @@ public sealed class BdisTestRunner
 
         try
         {
-            driver = _edgeDriverManager.CreateDriver(_logger);
-            driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_config.PageLoadTimeoutSeconds);
-            ApplyWindowSize(driver);
-            wait = new SeleniumWaitHelper(driver, _config);
-
             foreach (var countryProfile in _config.CountryProfiles)
             {
-                // A browser crash or a closed window must not prevent the next
-                // country from running, so recreate the driver when necessary.
-                if (driver == null || !IsDriverAlive(driver))
-                {
-                    DisposeDriver(driver);
-                    driver = _edgeDriverManager.CreateDriver(_logger);
-                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_config.PageLoadTimeoutSeconds);
-                    ApplyWindowSize(driver);
-                    wait = new SeleniumWaitHelper(driver, _config);
-                }
+                // NEW BDIS.side records Canada and the United States as two
+                // separate suites, each with a fresh browser session. Reusing
+                // one session let the second country inherit the first
+                // country's cached context (Canada's packet list served to the
+                // United States), so the driver is recreated for every country.
+                DisposeDriver(driver);
+                driver = _edgeDriverManager.CreateDriver(_logger);
+                driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_config.PageLoadTimeoutSeconds);
+                ApplyWindowSize(driver);
+                wait = new SeleniumWaitHelper(driver, _config);
 
                 var countryResult = RunCountry(driver, wait, urlProfile, countryProfile);
                 environmentResult.Countries.Add(countryResult);
@@ -3168,13 +3269,33 @@ public sealed class BdisTestRunner
         {
             var footer = driver.FindElements(By.CssSelector(".bcopyright")).FirstOrDefault();
             var footerText = footer?.Text?.Trim() ?? "";
+            var countryCode = GetPacketPrintCountryCode(driver);
 
             _logger.LogInfo(
-                $"Effective page for {webKey} / {countryName}: {driver.Url} | Footer: {footerText}");
+                $"Effective page for {webKey} / {countryName}: {driver.Url} | CountryCode: {countryCode} | Footer: {footerText}");
         }
         catch
         {
             // Diagnostics must never affect the test result.
+        }
+    }
+
+    /// <summary>
+    /// Reads only the CountryCode query value from the packet print link. The
+    /// full href is never logged because it can carry session identifiers.
+    /// </summary>
+    private static string GetPacketPrintCountryCode(IWebDriver driver)
+    {
+        try
+        {
+            var link = driver.FindElements(By.Id("hlPacketPrint")).FirstOrDefault();
+            var href = link?.GetAttribute("href") ?? "";
+            var match = Regex.Match(href, @"[?&]CountryCode=([^&]+)", RegexOptions.IgnoreCase);
+            return match.Success ? Uri.UnescapeDataString(match.Groups[1].Value) : "unknown";
+        }
+        catch
+        {
+            return "unknown";
         }
     }
 
@@ -3231,19 +3352,6 @@ public sealed class BdisTestRunner
     private static void ApplyWindowSize(IWebDriver driver)
     {
         driver.Manage().Window.Size = new Size(1400, 900);
-    }
-
-    private static bool IsDriverAlive(IWebDriver driver)
-    {
-        try
-        {
-            var _ = driver.WindowHandles;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private static void DisposeDriver(EdgeDriver driver)
