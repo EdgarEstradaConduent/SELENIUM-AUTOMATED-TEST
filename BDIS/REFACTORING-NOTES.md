@@ -12,12 +12,15 @@ This refactoring replaces the legacy BDIS test methods with the functional flow 
 | `BDIS/BDISWEB-SANDY/BDIS-SELENIUM.Linq.bak` | Original script for rollback and infrastructure reference. |
 | `BDIS/BDISWEB-SANDY/Config.properties` | New configuration. |
 | `BDIS/BDISWEB-SANDY/Config.properties.bak` | Original configuration for rollback. |
+| `BDIS/UPS Background Removed.png` | Original UPS logo uploaded by the user. |
+| `BDIS/BDISWEB-SANDY/ups-logo.png` | Deployed logo used by the dialogs and the HTML report. |
 | `BDIS/INSTRUCCIONES.txt` | Refactoring requirements. |
 
 Changed files:
 
 - `BDIS/BDISWEB-SANDY/BDIS-SELENIUM.Linq`
 - `BDIS/BDISWEB-SANDY/Config.properties`
+- `BDIS/BDISWEB-SANDY/ups-logo.png` (new)
 - `BDIS/REFACTORING-NOTES.md` (this document)
 
 No changes were made to the Power Automate flow, Parse JSON schema, `FilasTarjetas`, or Adaptive Card.
@@ -43,6 +46,12 @@ caShipmentNbr=<canada-document-query-shipment>
 caShipmentNbrPK=<canada-packet-print-shipment>
 usShipmentNbr=<us-document-query-shipment>
 usShipmentNbrPK=<us-packet-print-shipment>
+
+# Image uploaded during the Manipulate Images step
+imageFilePath=C:\Selenium\BDISWEB-SANDY\BDISImg\Image.tif
+
+# UPS logo used by the dialogs and the HTML report
+upsLogoPath=C:\Selenium\BDISWEB-SANDY\ups-logo.png
 
 # Recipient used by the Document Query email step.
 # NEW BDIS.side runs this step only when the page text reports SU6BDISWEB5.
@@ -88,6 +97,8 @@ printWindowPauseSeconds=30
 | n/a | `elementTimeoutSeconds` | Explicit element wait timeout. |
 | n/a | `pageLoadTimeoutSeconds` | Explicit page load timeout. |
 | n/a | `uploadTimeoutSeconds` | Explicit image upload timeout. |
+| n/a | `imageFilePath` | Absolute or relative path of the image uploaded by Manipulate Images. Relative paths resolve against the base directory. |
+| n/a | `upsLogoPath` | Absolute or relative path of the UPS logo used by the dialogs and the HTML report. Relative paths resolve against the base directory. |
 | n/a | `imageUploadPauseSeconds` | Pause after upload and before rotating/zooming the image. |
 | n/a | `printWindowPauseSeconds` | Pause before closing each print preview window. |
 | n/a | `webhookProxyHost` | Proxy host for the webhook request; empty means direct. |
@@ -120,8 +131,8 @@ Verification:
 | `SecretRedactor` | Removes credentials, webhook URL and email from logs, reports, dialogs and errors. |
 | `ConfigurationManager` | Loads, validates and exposes configuration; builds URL and country profiles. |
 | `ExecutionLogger` | Tab-separated local log with redaction. |
-| `HtmlReportGenerator` | UPS-branded HTML dashboard with a `SKIPPED` badge; no target URL column or footer. |
-| `UpsBranding` | Shared UPS colors, embedded Base64 logo and WinForms dialog styling. |
+| `HtmlReportGenerator` | UPS-branded HTML dashboard with a `SKIPPED` badge; embeds the logo read from `upsLogoPath`; no target URL column or footer. |
+| `UpsBranding` | Shared UPS colors, configurable logo loading with embedded Base64 fallback, and WinForms dialog styling. |
 | `PowerAutomateReporter` | Builds and posts the existing object envelope; optional webhook proxy. |
 | `JsonHelper` | JSON escaping for the manually built payload. |
 | `ScreenshotHelper` | Failure screenshots. |
@@ -148,7 +159,7 @@ The command numbers below are the exact indexes recorded in `NEW BDIS.side`. The
 
 | # | SIDE command | Target / value | C# implementation |
 | --- | --- | --- | --- |
-| 0 | `setWindowSize` | `1400x900` | `BdisTestRunner.RunEnvironment` -> `Window.Maximize()`. Exact size is not required; maximize avoids resolution-specific failures. |
+| 0 | `setWindowSize` | `1400x900` | `BdisTestRunner.ApplyWindowSize` sets `driver.Manage().Window.Size = new Size(1400, 900)`. |
 | 1 | `open` | `https://www.brok.dis.ups.com/login.aspx` | `BdisLoginService.Login` -> `driver.Navigate().GoToUrl(url)` using `f5Url`. |
 | 2-3 | `click` / `type` | `id=MainContent_ebUserID` | `BdisLoginService.Login` -> `Click`, `Clear`, `SendKeys(username)`. |
 | 4-5 | `click` / `type` | `id=MainContent_ebPassword` | `BdisLoginService.Login` -> `Click`, `Clear`, `SendKeys(password)`. |
@@ -171,7 +182,7 @@ The command numbers below are the exact indexes recorded in `NEW BDIS.side`. The
 | 28 | `assertText` | `id=MainContent_lblMsg` = `E-mail successfully sent to <recipient>.` | `DocumentQueryEmail` waits for page source to contain the confirmation. |
 | 29-31 | `else` / `echo` / `end` | email skipped | `BdisTestRunner.RecordSkippedStep` writes a `SKIPPED` step; the workflow continues. |
 | 32 | `click` | `id=hlPacketPrint` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
-| 33-34 | `click` / `select` | `id=MainContent_PacketName` = `label=Commercial Invoice` | `BdisWorkflow.SelectPacketByName` using `CountryTestProfile.PacketNameLabel`. |
+| 33-34 | `click` / `select` | `id=MainContent_PacketName` = `label=Commercial Invoice` | `PacketPrintSelectAndSearch` clicks the list, waits for the postback to populate it, then `SelectPacketByName` chooses `CountryTestProfile.PacketNameLabel`. |
 | 35 | `type` | `id=MainContent_Box1` = `782717VVJ4B` | `BdisWorkflow.PacketPrintSelectAndSearch` using `caShipmentNbrPK`. |
 | 36 | `click` | `id=MainContent_GetPacketsBtn` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
 | 37 | `click` | `id=MainContent_Grid1_Remove_0` | `BdisWorkflow.PacketPrintPrint`. |
@@ -198,7 +209,7 @@ The command numbers below are the exact indexes recorded in `NEW BDIS.side`. The
 
 | # | SIDE command | Target / value | C# implementation |
 | --- | --- | --- | --- |
-| 0 | `setWindowSize` | `1400x900` | `BdisTestRunner.RunEnvironment` -> `Window.Maximize()`. |
+| 0 | `setWindowSize` | `1400x900` | `BdisTestRunner.ApplyWindowSize` sets `driver.Manage().Window.Size = new Size(1400, 900)`. |
 | 1 | `open` | `https://www.brok.dis.ups.com/login.aspx` | `BdisLoginService.Login` using `f5Url`. |
 | 2-3 | `click` / `type` | `id=MainContent_ebUserID` | `BdisLoginService.Login`. |
 | 4-5 | `click` / `type` | `id=MainContent_ebPassword` | `BdisLoginService.Login`. |
@@ -221,7 +232,7 @@ The command numbers below are the exact indexes recorded in `NEW BDIS.side`. The
 | 29 | `assertText` | `id=MainContent_lblMsg` | `DocumentQueryEmail` wait condition. |
 | 30-32 | `else` / `echo` / `end` | email skipped | `BdisTestRunner.RecordSkippedStep` (`SKIPPED`). |
 | 33 | `click` | `id=hlPacketPrint` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
-| 34-35 | `click` / `select` | `id=MainContent_PacketName` = `label=CI - Commerical Invoice` | `BdisWorkflow.SelectPacketByName` (application spelling preserved). |
+| 34-35 | `click` / `select` | `id=MainContent_PacketName` = `label=CI - Commerical Invoice` | `PacketPrintSelectAndSearch` clicks the list, waits for the postback, then `SelectPacketByName`. Matching normalizes `Commerical`/`Commercial`. |
 | 36 | `type` | `id=MainContent_Box1` = `A20743KT8MJ` | `BdisWorkflow.PacketPrintSelectAndSearch` using `usShipmentNbrPK`. |
 | 37 | `click` | `id=MainContent_GetPacketsBtn` | `BdisWorkflow.PacketPrintSelectAndSearch`. |
 | 38 | `click` | `id=MainContent_Grid1_Remove_0` | `BdisWorkflow.PacketPrintPrint`. |
@@ -244,7 +255,7 @@ The command numbers below are the exact indexes recorded in `NEW BDIS.side`. The
 ### 4.3 Intentional deviations from `NEW BDIS.side`
 
 - Focus-only clicks (`css=tr:nth-child(10) > td`) are not replayed because `Click`, `Clear` and `SendKeys` already focus the target and the click does not change application state.
-- `setWindowSize 1400x900` is implemented as `Window.Maximize()` to avoid resolution-dependent layout failures.
+- `setWindowSize 1400x900` is implemented exactly as recorded; `Maximize()` is no longer used.
 - Canada is explicitly selected even though the CA recording omits the `select` command. This makes the country deterministic and lets the same workflow run for every URL.
 - The recorded `pause 30000` before closing a print preview is implemented as `printWindowPauseSeconds`; the default is 30 seconds.
 - `NEW BDIS.side` no longer clicks `.iv-viewer > img` before rotating. The script only waits for the preview to be visible.
@@ -394,7 +405,7 @@ Country-level detail is aggregated into the environment `error` field, which is 
 
 - The reporter logs the endpoint host, the exact payload and the HTTP status plus response body.
 - Transient failures (network errors, timeouts, HTTP 429 and HTTP 5xx) are retried up to 3 times with a short backoff.
-- `webhookProxyHost` and `webhookProxyPort` configure a proxy that applies only to the webhook HTTP request. The deployed defaults are `10.138.112.254` and `9191`. An empty host uses a direct connection.
+- `webhookProxyHost` and `webhookProxyPort` configure a proxy that applies only to the webhook HTTP request. When the keys are absent, the defaults are `10.138.112.254` and `9191`. An explicitly empty `webhookProxyHost` uses a direct connection.
 - The proxy is not applied to the browser session and does not change how the target site is reached.
 - HTML report generation is isolated from webhook delivery: a report failure does not prevent the notification.
 - The payload envelope and field names are unchanged.
@@ -406,7 +417,16 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - This keeps the dialogs visible when LINQPad is not the active application.
 - All three dialogs use the shared `UpsBranding` style: brown `#351C15` header, gold `#FFB500` accent and border, light `#F5F3F0` background, and the UPS logo in the top-right corner.
 - Primary and secondary buttons use the same brown/gold palette.
-- The logo is embedded as a Base64 PNG, so the dialogs and the HTML report do not depend on external files.
+- The logo is read from `upsLogoPath`. The dialogs load it through `UpsBranding.LoadLogo()` and the HTML report embeds it as a Base64 data URI, so each report remains a single self-contained file.
+- If `upsLogoPath` is missing or unreadable, both the dialogs and the report fall back to the embedded Base64 PNG. A warning is written to the local log.
+- The dialog logo sits in a white panel docked to the right of the brown header so the UPS mark is fully visible against the branding.
+
+### 5.10 Packet Print and print-preview handling
+
+- Packet Print reproduces the recorded sequence exactly: click `hlPacketPrint`, click `MainContent_PacketName`, wait for the postback to populate the option list, select the packet, type the shipment number, click `GetPacketsBtn`, remove row 0 and click `MainContent_BtnPrint`.
+- `SelectPacketByName` waits until the requested packet option is actually present, resolves its index on a fresh `SelectElement`, selects by index and verifies the selected text through a new lookup. Waiting for the option (not just any option) avoids selecting from a stale list, and the fresh lookups avoid the stale-reference failure observed after the postback.
+- Matching first tries the normalized exact label, then a normalized partial match. `Commerical` and `Commercial` are treated as the same word, so the recorded US label still resolves if the live application uses the other spelling. When nothing matches, the error lists the available options.
+- Print previews are detected by comparing the current handle set with the set captured before the print click. The new handle must not be the main window handle. After the pause, the preview is closed and the driver switches back to the main handle, which is verified to still exist.
 
 ## 6. Manual validation checklist
 
@@ -419,14 +439,15 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] `imageUploadPauseSeconds` (default 60) and `printWindowPauseSeconds` (default 30) are present or intentionally omitted to use defaults.
 - [ ] `webhookProxyHost` and `webhookProxyPort` are set correctly, or the host is empty to use a direct connection.
 - [ ] `emailWarningEnvironments` and `emailWarningTimeoutSeconds` are absent.
-- [ ] `BDISImg\Image.tif` exists.
+- [ ] `imageFilePath` points to an existing image (`BDISImg\Image.tif` by default).
+- [ ] `upsLogoPath` points to an existing PNG (`ups-logo.png` by default).
 - [ ] No obsolete keys remain: `url1..url5`, `usrName1..usrPass5`, `usrNameTxtBox`, `usrPassTxtBox`, `loginBtn`, `countryLogin`, `countryCode`, `shipStartDate`, `shipEndDate`, `dutyType`, `mngAcctUser`, `brkrCode`, `newBrokName`.
 - [ ] A missing or empty required key stops the run with a configuration error and no browser launch.
 
 ### Execution mode
 
 - [ ] Startup dialog offers `F5 / File Server Test` and `Full Test (All URLs)`.
-- [ ] The startup dialog shows the UPS header, the logo in the top-right corner and the brown/gold border.
+- [ ] The startup dialog shows the UPS header, the configured logo in a white panel on the right and the brown/gold border.
 - [ ] The startup dialog opens in the foreground with the F5 button focused.
 - [ ] Cancelling the dialog exits without launching Edge.
 - [ ] `F5 / File Server Test` runs exactly one environment (`f5Url`) with webKey `F5`.
@@ -463,7 +484,8 @@ Country-level detail is aggregated into the environment `error` field, which is 
 - [ ] `log\BDISWebApplication.txt` is updated with tab-separated step rows.
 - [ ] `log\BDISWebApplication_<timestamp>.html` is generated for success, functional failure, and prerequisite failure.
 - [ ] Screenshots are saved under `log\`.
-- [ ] The HTML report shows the UPS logo, brown header and gold accents.
+- [ ] The HTML report shows the configured UPS logo, brown header and gold accents.
+- [ ] Removing or renaming the configured logo falls back to the embedded logo without failing the report.
 - [ ] The HTML report has no target URL column and no target URL footer.
 - [ ] Prerequisite failures appear as `NOT_EXECUTED` in the local report.
 - [ ] Skipped email steps show a gray `SKIPPED` badge and are counted in the summary card.
@@ -507,7 +529,7 @@ Country-level detail is aggregated into the environment `error` field, which is 
 These items were taken from `NEW BDIS.side` and the existing script but could not be verified against the live application in the current macOS environment:
 
 - The country dropdown accepts `Canada` and `United States` by visible text. `CountrySelectionService` falls back to value `CA` / `US` and partial text.
-- The Packet Print labels are exactly `Commercial Invoice` and `CI - Commerical Invoice`. The US spelling is preserved. `SelectPacketByName` falls back to partial text.
+- The Packet Print labels are `Commercial Invoice` and `CI - Commerical Invoice` in `NEW BDIS.side`. The live list is read after the click postback; matching normalizes `Commerical`/`Commercial` and then falls back to partial text.
 - Login success is detected by `hlDocumentQuery` or `tbVal1_1`.
 - The email success message is `E-mail successfully sent to <recipient>.` and is used as a wait condition.
 - Web server detection reads `document.body.innerText`. If the text cannot be read, the server is reported as `UNKNOWN` and the email step is skipped.
@@ -522,6 +544,6 @@ These items were taken from `NEW BDIS.side` and the existing script but could no
 - The webhook proxy must be reachable from the test machine. A wrong host or port makes the notification fail after the retry loop; the test result itself is unaffected.
 - LINQPad 8 must support the `<Reference>System.Windows.Forms</Reference>` directive in a Program query. The script intentionally does not use a `#r` directive for this framework assembly.
 - The WinForms dialogs require Windows and an STA thread; the current environment is macOS, so live dialog behavior was not executed.
-- The UPS logo is embedded as a Base64 PNG derived from the official mark. Rendering was checked as an image asset, but the WinForms dialogs were not executed on Windows.
+- The UPS logo is read from `upsLogoPath` (default `C:\Selenium\BDISWEB-SANDY\ups-logo.png`) and falls back to an embedded Base64 PNG derived from the official mark. Rendering was checked as an image asset, but the WinForms dialogs were not executed on Windows.
 - The existing Power Automate flow consumes the preserved object envelope and reads the `results` array for Parse JSON. This is the one contract item that must be confirmed in the flow before production use.
-- The deployed base directory is `C:\Selenium\BDISWEB-SANDY`. The script reads `Config.properties` and `BDISImg\Image.tif` from that location, matching the original deployment layout.
+- The deployed base directory is `C:\Selenium\BDISWEB-SANDY`. The script reads `Config.properties`, `BDISImg\Image.tif` and `ups-logo.png` from that location by default, matching the original deployment layout. `imageFilePath` and `upsLogoPath` can override both asset paths.
