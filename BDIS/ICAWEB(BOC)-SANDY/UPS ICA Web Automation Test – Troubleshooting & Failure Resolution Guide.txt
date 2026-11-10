@@ -1,0 +1,94 @@
+UPS ICA WEB TEST – TROUBLESHOOTING GUIDE
+======================================
+
+This document provides solutions for common test failures in the UPS ICA internal web.
+
+
+1. PASSWORD EXPIRED ISSUE
+-------------------------
+
+If the test fails due to an expired password, execute the following SQL query 
+to update the password date in the ICA database:
+
+UPDATE [UPSActivityLogDB].[dbo].[Users]
+SET lastpwdupdatedate = GETDATE()
+WHERE username = 'acs1tst';
+
+
+2. REPORT FAILURE – SHIPMENTS NOT VISIBLE
+-----------------------------------------
+
+If the test fails in Reports, it is likely because the shipment data is no longer visible in the ICA web.
+
+Run the following SQL queries to retrieve valid shipment data:
+
+
+-- LOW VALUE SHIPMENTS
+
+WITH CTE AS (
+    SELECT 
+        CargoControlNbr,
+        ShipmentNbr,
+        ImportDateTime,
+        DestinationCountryCode,
+        ROW_NUMBER() OVER (
+            PARTITION BY DestinationCountryCode 
+            ORDER BY ImportDateTime ASC
+        ) AS rn
+    FROM [ICA].[dbo].[Cargo]
+    WHERE DestinationCountryCode IN ('US','CA')
+      AND CargoControlNbr = ''
+      AND ImportDateTime > DATEADD(DAY, -7, GETDATE())
+)
+SELECT *
+FROM CTE
+WHERE rn = 1;
+
+
+-- HIGH VALUE SHIPMENTS
+
+WITH CTE AS (
+    SELECT 
+        CargoControlNbr,
+        ShipmentNbr,
+        ImportDateTime,
+        DestinationCountryCode,
+        ROW_NUMBER() OVER (
+            PARTITION BY DestinationCountryCode 
+            ORDER BY ImportDateTime ASC
+        ) AS rn
+    FROM [ICA].[dbo].[Cargo]
+    WHERE DestinationCountryCode IN ('US','CA')
+      AND CargoControlNbr <> ''
+      AND CargoControlNbr IS NOT NULL
+      AND ImportDateTime > DATEADD(DAY, -7, GETDATE())
+)
+SELECT *
+FROM CTE
+WHERE rn = 1;
+
+
+3. CONFIGURATION UPDATE
+------------------------
+
+After retrieving valid shipment values, open the file:
+config.properties (use Notepad++)
+
+Update the following fields:
+
+LOW VALUE SHIPMENT
+caShipmentNbr = <value_from_query>
+usShipmentNbr = <value_from_query>
+
+HIGH VALUE SHIPMENT
+caShipmentNbr01 = <value_from_query>
+usShipmentNbr01 = <value_from_query>
+
+DATES (must match ImportDateTime)
+shipStartDate = YYYY-MM-DD
+shipEndDate   = YYYY-MM-DD
+
+
+Notes:
+- Ensure the dates match the ImportDateTime returned by the query.
+- Always use recent data (within the last 30 days).
