@@ -379,6 +379,28 @@ public static class UpsBranding
         form.Controls.Add(header);
         return header.Height + 18;
     }
+
+    public static void StylePrimaryButton(Button button)
+    {
+        button.BackColor = BrownColor;
+        button.ForeColor = Color.White;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderColor = GoldColor;
+        button.FlatAppearance.BorderSize = 2;
+        button.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+        button.Cursor = Cursors.Hand;
+    }
+
+    public static void StyleSecondaryButton(Button button)
+    {
+        button.BackColor = Color.White;
+        button.ForeColor = BrownColor;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderColor = BrownColor;
+        button.FlatAppearance.BorderSize = 2;
+        button.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        button.Cursor = Cursors.Hand;
+    }
 }
 
 // 10. HTML REPORT GENERATOR
@@ -1035,7 +1057,7 @@ void Main()
     catch (EdgeDriverInitializationException ex)
     {
         logger.LogError("Driver init", ex);
-        "Driver initialization failed: " + ex.Message.Dump();
+        ("Driver initialization failed: " + ex.Message).Dump();
         return;
     }
 
