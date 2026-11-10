@@ -1209,12 +1209,14 @@ public class IcaTestRunner
     private readonly ExecutionLogger _logger;
     private readonly IcaLoginService _login;
     private readonly EdgeDriverManager _edgeMgr;
+    private readonly Action<string> _progress;
     private readonly List<TestStepResult> _allSteps = new List<TestStepResult>();
 
-    public IcaTestRunner(ConfigurationManager config, ExecutionLogger logger)
+    public IcaTestRunner(ConfigurationManager config, ExecutionLogger logger, Action<string> progress)
     {
         _config = config;
         _logger = logger;
+        _progress = progress;
         _login = new IcaLoginService(config);
         _edgeMgr = new EdgeDriverManager(logger);
     }
@@ -1305,6 +1307,7 @@ public class IcaTestRunner
                 stepResult.Status = "PASSED";
                 stepResult.Details = "Executed successfully.";
                 _logger.LogStep(stepResult);
+                _progress?.Invoke($"{stepResult.EnvironmentName} / {countryProfile.DisplayName} / {stepName}: PASSED");
             }
             catch (Exception ex)
             {
@@ -1317,6 +1320,7 @@ public class IcaTestRunner
                 countryResult.ErrorMessage = _config.Redactor.Redact(ex.Message);
                 _logger.LogStep(stepResult);
                 _logger.LogError($"{urlProfile.WebKey} / {countryProfile.DisplayName} / {stepName}", ex);
+                _progress?.Invoke($"{stepResult.EnvironmentName} / {countryProfile.DisplayName} / {stepName}: FAILED - {stepResult.Details}");
             }
             _allSteps.Add(stepResult);
             countryResult.Steps.Add(stepResult);
@@ -1395,7 +1399,7 @@ void Main()
     logger.LogInfo("Configuration file: " + config.ConfigPath);
     logger.LogInfo("UPS logo file: " + config.UpsLogoPath);
 
-    var runner = new IcaTestRunner(config, logger);
+    var runner = new IcaTestRunner(config, logger, message => { message.Dump(); });
     RunSummary summary;
     try
     {
