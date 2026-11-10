@@ -7,3 +7,32 @@ from disconnected: unable to send message to renderer
 11/10/2026 13:47:51	Process Low Value Case Report	Failed: Timed out after 20 seconds
 11/10/2026 13:48:25	Process Low Value Case Report	Failed: Timed out after 20 seconds
 11/10/2026 13:49:00	Process Low Value Case Report	Failed: Timed out after 20 seconds
+2026-11-10 15:17:35	INFO	=== STARTING ICA WEB AUTOMATION TEST ===
+2026-11-10 15:17:35	INFO	Windows user: Edgar.Estrada
+2026-11-10 15:17:35	INFO	Configuration file: C:\Selenium\ICAWEB(BOC)-SANDY\config.properties
+2026-11-10 15:17:35	INFO	UPS logo file: C:\Selenium\BDISWEB-SANDY\ups-logo.png
+2026-11-10 15:17:35	INFO	Starting environment F5: https://import.ups.com
+2026-11-10 15:17:37	INFO	EdgeDriver created successfully.
+2026-11-10 15:17:38	STEP	Environment=F5	Country=Canada	Step=Login	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:17:39	STEP	Environment=F5	Country=Canada	Step=Logout	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:17:39	STEP	Environment=F5	Country=Canada	Step=Re-Login	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:18:42	STEP	Environment=F5	Country=Canada	Step=Report - Low Value Shipment	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:18:43	STEP	Environment=F5	Country=Canada	Step=Cart - Delete One	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:18:44	STEP	Environment=F5	Country=Canada	Step=Report - High Value Shipment	Status=FAILED	Details=stale element reference: stale element not found
+  (Session info: MicrosoftEdge=156.0.4314.58); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#stale-element-reference-exception	Screenshot=Screenshots\F5_Canada_Report_-_High_Value_Shipment_20261110_151844.png
+2026-11-10 15:18:44	ERROR	F5 / Canada / Report - High Value Shipment: StaleElementReferenceException: stale element reference: stale element not found
+  (Session info: MicrosoftEdge=156.0.4314.58); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#stale-element-reference-exception
+2026-11-10 15:18:46	INFO	EdgeDriver created successfully.
+2026-11-10 15:18:48	STEP	Environment=F5	Country=United States	Step=Login	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:18:48	STEP	Environment=F5	Country=United States	Step=Logout	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:18:48	STEP	Environment=F5	Country=United States	Step=Re-Login	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:20:02	STEP	Environment=F5	Country=United States	Step=Report - Shipment	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:20:03	STEP	Environment=F5	Country=United States	Step=Cart - Select All and Delete	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:20:04	STEP	Environment=F5	Country=United States	Step=Home	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:20:04	STEP	Environment=F5	Country=United States	Step=Logout	Status=PASSED	Details=Executed successfully.	Screenshot=
+2026-11-10 15:20:04	INFO	HTML report generated at: C:\Selenium\ICAWEB(BOC)-SANDY\log\ICAWebApplication.html
+2026-11-10 15:20:04	INFO	Power Automate payload: {"testName":"ICA","user":"Edgar.Estrada","globalStatus":"FAILED","results":[{"webKey":"F5","targetUrl":"https://import.ups.com","status":"FAILED","startTime":"2026-11-10T15:17:35Z","endTime":"2026-11-10T15:20:04Z","error":""}]}
+2026-11-10 15:20:04	INFO	Proxy configured: 10.138.112.254:9191
+2026-11-10 15:20:05	INFO	Power Automate response: 202 Accepted
+2026-11-10 15:20:05	INFO	Final global status: FAILED
+2026-11-10 15:20:05	INFO	=== PROCESS FINISHED ===
