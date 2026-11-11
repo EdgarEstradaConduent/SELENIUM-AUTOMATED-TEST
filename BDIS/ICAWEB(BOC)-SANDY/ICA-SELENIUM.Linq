@@ -689,11 +689,13 @@ public class IcaWorkflow
         var gridItem = _wait.WaitClickable(By.CssSelector(".griditem > td > a > img"));
         gridItem.Click();
 
+        // capture handles BEFORE clicking View/Print (print window opens on this click)
+        var mainWindow = driver.CurrentWindowHandle;
+        var existing = new HashSet<string>(driver.WindowHandles);
+
         _wait.WaitClickable(By.LinkText("View/Print")).Click();
 
         // print window (side file: pause 30s then close)
-        var mainWindow = driver.CurrentWindowHandle;
-        var existing = new HashSet<string>(driver.WindowHandles);
         var deadline = DateTime.UtcNow.AddSeconds(30);
         string newHandle = null;
         while (DateTime.UtcNow < deadline && newHandle == null)
@@ -735,10 +737,12 @@ public class IcaWorkflow
         var gridItem = _wait.WaitClickable(By.CssSelector(".griditem > td > a > img"));
         gridItem.Click();
 
-        _wait.WaitClickable(By.LinkText("View/Print")).Click();
-
+        // capture handles BEFORE clicking View/Print (print window opens on this click)
         var mainWindow = driver.CurrentWindowHandle;
         var existing = new HashSet<string>(driver.WindowHandles);
+
+        _wait.WaitClickable(By.LinkText("View/Print")).Click();
+
         var deadline = DateTime.UtcNow.AddSeconds(30);
         string newHandle = null;
         while (DateTime.UtcNow < deadline && newHandle == null)
@@ -809,32 +813,39 @@ public class IcaWorkflow
         }
         catch { }
 
+        // capture handles BEFORE the link click that opens the print window
+        var mainWindow = driver.CurrentWindowHandle;
+        var existing = new HashSet<string>(driver.WindowHandles);
+
         // click the link in tr3 td4
+        bool linkClicked = false;
         try
         {
             var link = _wait.WaitClickable(By.CssSelector("tr:nth-child(3) > td:nth-child(4) > a"));
             link.Click();
+            linkClicked = true;
         }
         catch { }
 
-        var mainWindow = driver.CurrentWindowHandle;
-        var existing = new HashSet<string>(driver.WindowHandles);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        string newHandle = null;
-        while (DateTime.UtcNow < deadline && newHandle == null)
+        if (linkClicked)
         {
-            foreach (var h in driver.WindowHandles)
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            string newHandle = null;
+            while (DateTime.UtcNow < deadline && newHandle == null)
             {
-                if (!existing.Contains(h) && h != mainWindow) { newHandle = h; break; }
+                foreach (var h in driver.WindowHandles)
+                {
+                    if (!existing.Contains(h) && h != mainWindow) { newHandle = h; break; }
+                }
+                if (newHandle == null) Thread.Sleep(500);
             }
-            if (newHandle == null) Thread.Sleep(500);
-        }
-        if (newHandle != null)
-        {
-            driver.SwitchTo().Window(newHandle);
-            Thread.Sleep(_config.PrintWindowPauseSeconds * 1000);
-            driver.Close();
-            driver.SwitchTo().Window(mainWindow);
+            if (newHandle != null)
+            {
+                driver.SwitchTo().Window(newHandle);
+                Thread.Sleep(_config.PrintWindowPauseSeconds * 1000);
+                driver.Close();
+                driver.SwitchTo().Window(mainWindow);
+            }
         }
         // side file: after print window -> SelectAllToCartButton (handled in CartSelectAllAndDelete)
     }
