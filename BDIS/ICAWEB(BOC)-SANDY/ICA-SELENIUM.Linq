@@ -107,7 +107,15 @@ public class ConfigurationException : Exception
 
 public class EdgeDriverInitializationException : Exception
 {
-    public EdgeDriverInitializationException(string msg, Exception inner) : base(msg, inner) { }
+    public string TechnicalDetails { get; }
+
+    public EdgeDriverInitializationException(string message, Exception innerException = null)
+        : base(message, innerException)
+    {
+        TechnicalDetails = innerException == null
+            ? message
+            : message + Environment.NewLine + innerException;
+    }
 }
 
 // 4. SECRET REDACTOR
@@ -1432,7 +1440,10 @@ void Main()
     catch (EdgeDriverInitializationException ex)
     {
         logger.LogError("Driver init", ex);
+        var safeDetails = config.Redactor.Redact(ex.TechnicalDetails);
         ("Driver initialization failed: " + ex.Message).Dump();
+        DialogService.ShowEdgeDriverFailureDialog(safeDetails);
+        logger.LogInfo("Execution stopped because Microsoft Edge WebDriver could not be initialized.");
         return;
     }
 
