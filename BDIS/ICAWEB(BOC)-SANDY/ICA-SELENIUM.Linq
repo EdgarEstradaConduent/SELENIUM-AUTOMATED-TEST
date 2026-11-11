@@ -719,7 +719,9 @@ public class IcaWorkflow
     public void ReportHighValueShipment(IWebDriver driver, CountryTestProfile profile)
     {
         if (string.IsNullOrWhiteSpace(profile.ShipmentNbrHigh)) return;
-        GoToReports(driver);
+        // side file line 37: click "Find Shipment" link to return to search form
+        try { _wait.WaitClickable(By.LinkText("Find Shipment")).Click(); }
+        catch { GoToReports(driver); }
 
         SelectDutyType(driver, "'High Value' Shipment", "01");
 
@@ -771,6 +773,8 @@ public class IcaWorkflow
             try
             {
                 var dutyType = _wait.WaitVisible(dutyBy);
+                // side file: click DutyTypeList before selecting
+                try { dutyType.Click(); } catch { }
                 var dutySelect = new SelectElement(dutyType);
                 try { dutySelect.SelectByText(label); }
                 catch { try { dutySelect.SelectByValue(valueFallback); } catch { } }
@@ -788,7 +792,9 @@ public class IcaWorkflow
     {
         GoToReports(driver);
         var shipBox = _wait.WaitVisible(By.Id("ShipmentNbrTextBox"));
-        shipBox.Clear(); shipBox.SendKeys(profile.ShipmentNbr);
+        shipBox.Click();
+        shipBox.Clear();
+        shipBox.SendKeys(profile.ShipmentNbr);
 
         SetCalendarDate(driver, profile.ShipStartDate);
 
