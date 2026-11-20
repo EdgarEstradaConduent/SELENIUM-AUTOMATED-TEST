@@ -1,0 +1,59 @@
+1. Password Expiration Issue
+If the test fails due to an expired password, execute the following SQL query to update the password timestamp in the IDIS database:
+ 
+UPDATE [UPSActivityLogDB].dbo.Users
+SET lastpwdupdatedate = GETDATE()
+WHERE username = 'acs1tst';
+ 
+2. Shipment Detail Report.
+IDIS Database Query:
+ 
+SELECT TOP 2 ShipmentID
+FROM UPSDISDATA.dbo.Document
+WHERE ShipmentID IS NOT NULL
+ORDER BY TimeReceived DESC;
+ 
+Update the following values in the config.properties file:
+ 
+caShipmentNbr = 06F77AVNDT8
+usShipmentNbr = A4292RVHX7F
+ 
+3. MAWB Lookup Report.
+Database Query:
+ 
+SELECT TOP 2 d.DocID AS maWbNbr
+FROM UPSDISDATA.dbo.document d (NOLOCK)
+INNER JOIN UPSDISDATA.dbo.documentdetail dd (NOLOCK)
+    ON d.docname = dd.docname
+WHERE dd.doctype = 'MW'
+ORDER BY d.timereceived DESC;
+ 
+Update the following value in the config.properties file:
+ 
+mawbNbr = 00034593952
+ 
+4. Package Detail – Reports
+Update the following value in the config.properties file:
+ 
+packageID = 1Z30F1210459125790
+ 
+Database Query:
+ 
+SELECT TOP 2 *
+FROM UPSDISDATA.dbo.Document
+WHERE DocId LIKE '1Z%' AND ImageCount = 1
+ORDER BY TimeReceived DESC;
+ 
+Note:
+The user must verify in the IDIS web application that the image is accessible.
+If the image cannot be accessed, the report execution will fail.
+ 
+5. OpenQA.Selenium.StaleElementReferenceException
+Error Description:
+ 
+OpenQA.Selenium.StaleElementReferenceException:
+stale element reference: element is no longer attached to the DOM
+ 
+Resolution:
+If any report displays this error, and it was previously confirmed to work in the web application, it is highly likely that an IIS reset is required.
+However, before performing an iisreset, compare results across other environments to confirm that the issue is isolated to a single web instance. This helps ensure the problem is not caused by data inconsistencies or broader system failures.

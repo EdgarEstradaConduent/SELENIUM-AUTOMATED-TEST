@@ -1,0 +1,198 @@
+11/04/2026 11:25:26	[Environment: File Server (F5)] Target Site Evaluation Started	https://www.idis.ups.com
+11/04/2026 11:25:37	Navigate to Base URL Target	https://www.idis.ups.com
+11/04/2026 11:25:37	Input Username	acs1tst
+11/04/2026 11:25:37	Input Password	******
+11/04/2026 11:25:38	Login Button Clicked	OK
+11/04/2026 11:25:38	Login test Complete	OK
+11/04/2026 11:25:38	Print: Lookup Export Country/Date	Start
+11/04/2026 11:25:38	Lookup Export Country/Date	Start
+11/04/2026 11:25:38	Lookup Export Country/Date	Lookup link
+11/04/2026 11:25:38	Lookup Export Country/Date	Click Start Date Picker
+11/04/2026 11:25:38	Lookup Export Country/Date	Click Start Date Picker < button
+11/04/2026 11:25:38	Lookup Export Country/Date	Click Start Date Picker 2nd friday button
+11/04/2026 11:25:38	Lookup Export Country/Date	Click End Date Picker
+11/04/2026 11:25:38	Lookup Export Country/Date	Click End Date Picker < button
+11/04/2026 11:25:38	Lookup Export Country/Date	Click End Date Picker 2nd saturday button
+11/04/2026 11:25:39	Lookup Export Country/Date	submit button click
+11/04/2026 11:25:39	Lookup Export Country/Date	ok 1st alert
+11/04/2026 11:25:51	Lookup Export Country/Date	1st row add to cart click
+11/04/2026 11:25:51	Print: Test Complete	OK
+11/04/2026 11:27:51	Print to File: Lookup Export Country/Date	Start
+11/04/2026 11:27:51	Lookup Export Country/Date	Start
+11/04/2026 11:27:51	Lookup Export Country/Date	Lookup link
+11/04/2026 11:27:51	Lookup Export Country/Date	Click Start Date Picker
+11/04/2026 11:27:51	Lookup Export Country/Date	Click Start Date Picker < button
+11/04/2026 11:27:51	Lookup Export Country/Date	Click Start Date Picker 2nd friday button
+11/04/2026 11:27:52	Lookup Export Country/Date	Click End Date Picker
+11/04/2026 11:27:52	Lookup Export Country/Date	Click End Date Picker < button
+11/04/2026 11:27:52	Lookup Export Country/Date	Click End Date Picker 2nd saturday button
+11/04/2026 11:27:52	Lookup Export Country/Date	submit button click
+11/04/2026 11:27:52	Lookup Export Country/Date	ok 1st alert
+11/04/2026 11:28:02	Lookup Export Country/Date	1st row add to cart click
+11/04/2026 11:28:02	Print to File: Test Complete	OK
+11/04/2026 11:28:02	Email Button: Lookup Export Country/Date	Start
+11/04/2026 11:28:02	Lookup Export Country/Date	Start
+11/04/2026 11:28:02	Lookup Export Country/Date	Lookup link
+11/04/2026 11:28:02	Lookup Export Country/Date	Click Start Date Picker
+11/04/2026 11:28:02	Lookup Export Country/Date	Click Start Date Picker < button
+11/04/2026 11:28:02	Lookup Export Country/Date	Click Start Date Picker 2nd friday button
+11/04/2026 11:28:03	Lookup Export Country/Date	Click End Date Picker
+11/04/2026 11:28:03	Lookup Export Country/Date	Click End Date Picker < button
+11/04/2026 11:28:03	Lookup Export Country/Date: Failed	OpenQA.Selenium.StaleElementReferenceException: stale element reference: stale element not found in the current frame
+  (Session info: MicrosoftEdge=156.0.4314.58); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#stale-element-reference-exception
+   at OpenQA.Selenium.WebDriver.UnpackAndThrowOnError(Response errorResponse, String commandToExecute)
+   at OpenQA.Selenium.WebDriver.ExecuteAsync(String driverCommandToExecute, Dictionary`2 parameters)
+   at OpenQA.Selenium.WebDriver.Execute(String driverCommandToExecute, Dictionary`2 parameters)
+   at OpenQA.Selenium.WebElement.Execute(String commandToExecute, Dictionary`2 parameters)
+   at OpenQA.Selenium.WebElement.Click()
+   at UserQuery.Program.exportDate() in C:\Users\Edgar.Estrada\AppData\Local\Temp\2\LINQPad8\_lwpneuce\vsomvu\LINQPadQuery:line 675
+11/04/2026 11:29:33	Email Button: Failed	System.NullReferenceException: Object reference not set to an instance of an object.
+   at UserQuery.Program.emailButton() in C:\Users\Edgar.Estrada\AppData\Local\Temp\2\LINQPad8\_lwpneuce\vsomvu\LINQPadQuery:line 708
+11/04/2026 11:29:33	Print from Viewer	Start
+11/04/2026 11:29:33	Lookup Shipment ID	Start
+11/04/2026 11:29:33	Lookup Shipment ID	Click Shipment ID link
+11/04/2026 11:29:33	Lookup Shipment ID	Shipment id input
+11/04/2026 11:29:34	Lookup Shipment ID	click submit button
+11/04/2026 11:29:34	Lookup Shipment ID	success
+11/04/2026 11:29:35	Print from Viewer	Click print
+11/04/2026 11:29:35	Print from Viewer	Test Complete
+11/04/2026 11:29:35	Viewer Function	Start
+11/04/2026 11:29:35	Lookup Shipment ID	Start
+11/04/2026 11:29:35	Lookup Shipment ID	Click Shipment ID link
+11/04/2026 11:29:35	Lookup Shipment ID	Shipment id input
+11/04/2026 11:29:35	Lookup Shipment ID	click submit button
+11/04/2026 11:29:35	Lookup Shipment ID	success
+11/04/2026 11:29:36	Viewer Function	Click Zoom
+11/04/2026 11:29:36	Viewer Function	Click Actual Size
+11/04/2026 11:29:36	Viewer Function	Click Larger
+11/04/2026 11:29:36	Viewer Function	Click Smaller
+11/04/2026 11:29:36	Viewer Function	Click Fit Screen
+11/04/2026 11:29:36	Viewer Function	Click Best Fit
+11/04/2026 11:29:37	Viewer Function	Click Rotate Left
+11/04/2026 11:29:37	Viewer Function	Click Rotate Right
+11/04/2026 11:29:37	Viewer Function	Test Complete
+11/04/2026 11:29:37	Add User	Start
+11/04/2026 11:29:37	Add User	Click User Link
+11/04/2026 11:29:37	Add User	Input First Name
+11/04/2026 11:29:37	Add User	Input Last Name
+11/04/2026 11:29:37	Add User	Input UserName
+11/04/2026 11:29:37	Add User	Input User Password
+11/04/2026 11:29:37	Add User	Input Confirmed Password
+11/04/2026 11:29:37	Add User	Select User Group
+11/04/2026 11:29:37	Add User	Input Building ID
+11/04/2026 11:29:37	Add User	Select Region
+11/04/2026 11:29:37	Add User	Input Email Address
+11/04/2026 11:29:38	Add User	Input Confirmed Email Address
+11/04/2026 11:29:38	Add User	Click Add Key
+11/04/2026 11:29:38	Add User	Test Complete
+11/04/2026 11:29:38	Modify User	Start
+11/04/2026 11:29:38	Modify User	Input UserName
+11/04/2026 11:29:38	Modify User	Click Submit Button
+11/04/2026 11:29:38	Modify User	Input First Name
+11/04/2026 11:29:38	Modify User	Input Last Name
+11/04/2026 11:29:38	Modify User	Select User Group
+11/04/2026 11:29:38	Modify User	Input Building ID
+11/04/2026 11:29:38	Modify User	Select Region
+11/04/2026 11:29:38	Modify User	Input Email Address
+11/04/2026 11:29:39	Modify User	Input Confirmed Email Address
+11/04/2026 11:29:39	Modify User	Click Modify Button
+11/04/2026 11:29:39	Modify User	Test Complete
+11/04/2026 11:29:39	Delete User	Start
+11/04/2026 11:29:39	Delete User	Input to be deleted User ID
+11/04/2026 11:29:39	Delete User	Click Delete Button
+11/04/2026 11:29:39	Delete User	Test Complete
+11/04/2026 11:29:39	Update Profile	Start
+11/04/2026 11:29:40	Update Profile	Click Update Profile Link
+11/04/2026 11:29:40	Update Profile	Update First Name
+11/04/2026 11:29:40	Update Profile	Update Last Name
+11/04/2026 11:29:41	Update Profile	Click Submit Button
+11/04/2026 11:29:41	Update Profile	Test Complete
+11/04/2026 11:29:41	MWAB Lookup	Start
+11/04/2026 11:29:41	MWAB Lookup	Click MAWB Link
+11/04/2026 11:29:41	MWAB Lookup	Input MAWB Number
+11/04/2026 11:29:41	MWAB Lookup	Click Submit Button
+11/04/2026 11:29:41	MWAB Lookup	Click Add to Cart
+11/04/2026 11:29:42	MWAB Lookup	Test Complete
+11/04/2026 11:29:54	Image Site Volume - Reports	Start
+11/04/2026 11:29:54	Image Site Volume - Reports	Link Clicked
+11/04/2026 11:29:54	Image Site Volume - Reports	Enter Building ID
+11/04/2026 11:29:54	Image Site Volume - Reports	Start Date Picker Clicked
+11/04/2026 11:29:54	Image Site Volume - Reports	Click Start Date Picker < button
+11/04/2026 11:29:54	Image Site Volume - Reports	Click Start Date Picker 4th friday button
+11/04/2026 11:29:54	Image Site Volume - Reports	Click End Date Picker
+11/04/2026 11:29:54	Image Site Volume - Reports	Click End Date Picker < button
+11/04/2026 11:29:54	Image Site Volume - Reports: Failed	OpenQA.Selenium.StaleElementReferenceException: stale element reference: stale element not found in the current frame
+  (Session info: MicrosoftEdge=156.0.4314.58); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#stale-element-reference-exception
+   at OpenQA.Selenium.WebDriver.UnpackAndThrowOnError(Response errorResponse, String commandToExecute)
+   at OpenQA.Selenium.WebDriver.ExecuteAsync(String driverCommandToExecute, Dictionary`2 parameters)
+   at OpenQA.Selenium.WebDriver.Execute(String driverCommandToExecute, Dictionary`2 parameters)
+   at OpenQA.Selenium.WebElement.Click()
+   at UserQuery.Program.ImgSiteVolume() in C:\Users\Edgar.Estrada\AppData\Local\Temp\2\LINQPad8\_lwpneuce\vsomvu\LINQPadQuery:line 1049
+11/04/2026 11:29:54	Shipment Detail - Reports	Start
+11/04/2026 11:29:54	Shipment Detail - Reports	Link Clicked
+11/04/2026 11:29:55	Shipment Detail	Input Shipment Number
+11/04/2026 11:29:55	Shipment Detail	Submit Button Clicked
+11/04/2026 11:29:55	Shipment Detail - Reports: Failed	Please Check if this shipment number is still valid 455763P9SNQ. OpenQA.Selenium.NoSuchElementException: no such element: Unable to locate element: {"method":"xpath","selector":"/html/body/table/tbody/tr[2]/td[2]/table/tbody/tr[3]/td/font/table/tbody/tr[3]/td[1]/a"}
+  (Session info: MicrosoftEdge=156.0.4314.58); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#no-such-element-exception
+   at OpenQA.Selenium.WebDriver.UnpackAndThrowOnError(Response errorResponse, String commandToExecute)
+   at OpenQA.Selenium.WebDriver.ExecuteAsync(String driverCommandToExecute, Dictionary`2 parameters)
+   at OpenQA.Selenium.WebDriver.Execute(String driverCommandToExecute, Dictionary`2 parameters)
+   at OpenQA.Selenium.WebDriver.FindElement(String mechanism, String value)
+   at UserQuery.Program.ShipmentDetail() in C:\Users\Edgar.Estrada\AppData\Local\Temp\2\LINQPad8\_lwpneuce\vsomvu\LINQPadQuery:line 1093
+11/04/2026 11:29:55	Package Detail - Reports	Start
+11/04/2026 11:29:55	Package Detail - Reports	Link Clicked
+11/04/2026 11:29:56	Package Detail	Input Package ID
+11/04/2026 11:29:56	Package Detail	Submit Button Clicked
+11/04/2026 11:29:56	Package Detail	Click Result
+11/04/2026 11:29:56	Package Detail - Reports	Test Complete
+11/04/2026 11:29:57	Keyed no Docs Imaged - Reports	Start
+11/04/2026 11:29:57	Keyed no Docs Imaged - Reports	Link Clicked
+11/04/2026 11:29:57	Keyed no Docs Imaged - Reports	Input US on the Data Capture Country
+11/04/2026 11:29:57	Keyed no Docs Imaged - Reports	Submit Button Clicked
+11/04/2026 11:29:57	Keyed no Docs Imaged - Reports	Test Complete with 19 result
+11/04/2026 11:30:08	OCR Configuration - Reports	Start
+11/04/2026 11:30:08	OCR Report - Reports	Link Clicked
+11/04/2026 11:30:38	OCR Configuration - Reports	Test Complete
+11/04/2026 11:30:38	OCR Report - Reports	Start
+11/04/2026 11:30:38	OCR Report - Reports	Link Clicked
+11/04/2026 11:30:38	OCR Report - Reports	Input Start Time
+11/04/2026 11:30:39	OCR Report - Reports	Input End Time
+11/04/2026 11:30:39	OCR Report - Reports	submit button click
+11/04/2026 11:32:09	OCR Report - Reports	Test Complete
+11/04/2026 11:32:09	Suspended Site (UT) - Admin Reports	Start
+11/04/2026 11:32:09	Suspended Site (UT) - Admin Reports	Link Clicked
+11/04/2026 11:32:09	Suspended Site (UT) - Admin Reports	Enter Country Code
+11/04/2026 11:32:09	Suspended Site (UT) - Admin Reports	submit button click
+11/04/2026 11:32:09	Suspended Site (UT) - Admin Reports	Test Complete with no result rendered
+11/04/2026 11:32:10	Suspended Site (TX) - Admin Reports	Start
+11/04/2026 11:32:10	Suspended Site (TX) - Admin Reports	Link Clicked
+11/04/2026 11:32:10	Suspended Site (TX) - Admin Reports	Enter Country Code
+11/04/2026 11:32:10	Suspended Site (TX) - Admin Reports	submit button click
+11/04/2026 11:32:15	Suspended Site (TX) - Admin Reports	Test Complete
+11/04/2026 11:32:15	Sites That Did Not Image - Admin Reports	Start
+11/04/2026 11:32:15	Sites That Did Not Image - Admin Reports	Link Clicked
+11/04/2026 11:32:15	Sites That Did Not Image - Admin Report	Date Picker Clicked
+11/04/2026 11:32:15	Sites That Did Not Image - Admin Reports	Click Date Picker < button
+11/04/2026 11:32:15	Sites That Did Not Image - Admin Report	Click Date Picker 4th friday button
+11/04/2026 11:32:15	Sites That Did Not Image - Admin Reports	submit button click
+11/04/2026 11:32:20	Sites That Did Not Image - Admin Reports	Test Complete with no result rendered
+11/04/2026 11:32:20	Sites That Did Not Image - Admin Reports	Test Complete
+11/04/2026 11:32:20	Buildings Configuration - Admin Reports	Start
+11/04/2026 11:32:21	Buildings Configuration - Admin Reports	Link Clicked
+11/04/2026 11:33:21	Buildings Configuration - Admin Reports	Test Complete
+11/04/2026 11:33:21	Auto Classification - Admin Reports	Start
+11/04/2026 11:33:21	Auto Classification - Admin Reports	Link Clicked
+11/04/2026 11:34:21	Auto Classification - Admin Reports	Test Failed
+11/04/2026 11:34:21	IDIS Summary - Admin Reports	Start
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Link Clicked
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Enter Building ID
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Enter Country Code
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Start Date Picker Clicked
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Click Start Date Picker < button
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Click Start Date Picker 4th friday button
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Click End Date Picker
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Click End Date Picker < button
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	Click Start Date Picker 4th friday button
+11/04/2026 11:34:22	IDIS Summary - Admin Reports	submit button click
+11/04/2026 11:34:32	IDIS Summary - Admin Reports	Test Complete
+11/04/2026 11:34:32	Automated Execution Flow	All internal case modules completed successfully.
