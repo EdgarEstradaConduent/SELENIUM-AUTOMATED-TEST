@@ -1,0 +1,51 @@
+{
+  "type": "AdaptiveCard",
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "@{triggerBody()?['testName']} Web Test",
+      "weight": "Bolder",
+      "size": "Large",
+      "color": "Accent"
+    },
+    {
+      "type": "FactSet",
+      "label": "Script Execution Metadata",
+      "facts": [
+        {
+          "title": "PCM Agent:",
+          "value": "@{triggerBody()?['user']}"
+        },
+        {
+          "title": "Global Status:",
+          "value": "@{if(equals(triggerBody()?['globalStatus'], 'PASSED'), '?? PASSED', '?? FAILED')}"
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "Detailed Environment Status:",
+      "weight": "Bolder",
+      "size": "Medium",
+      "separator": true
+    },
+    {
+      "type": "Container",
+      "items": [
+        {
+          "type": "ColumnSet",
+          "columns": [
+            { "type": "Column", "width": "stretch", "items": [ { "type": "TextBlock", "text": "**Environment / URL**", "weight": "Bolder" } ] },
+            { "type": "Column", "width": "auto", "items": [ { "type": "TextBlock", "text": "**Status**", "weight": "Bolder" } ] }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Container",
+      "items": @{variables('CARDS')}
+    }
+  ]
+}

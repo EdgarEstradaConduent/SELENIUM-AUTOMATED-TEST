@@ -1,0 +1,44 @@
+{
+  "type": "ParseJson",
+  "inputs": {
+    "content": "@triggerBody()?['Results']",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "webKey": {
+            "type": "string"
+          },
+          "targetUrl": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "startTime": {
+            "type": "string"
+          },
+          "endTime": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "webKey",
+          "targetUrl",
+          "status",
+          "startTime",
+          "endTime",
+          "error"
+        ]
+      }
+    }
+  },
+  "runAfter": {},
+  "metadata": {
+    "operationMetadataId": "f0a68d57-47b2-4808-ad2f-826fcfb87f35"
+  }
+}

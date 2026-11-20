@@ -1,0 +1,36 @@
+{
+  "type": "ColumnSet",
+  "separator": true,
+  "columns": [
+    {
+      "type": "Column",
+      "width": "stretch",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "@{concat('**[', items('Apply_to_each')?['webKey'], ']** - ', items('Apply_to_each')?['targetUrl'])}",
+          "wrap": true,
+          "size": "Small"
+        },
+        {
+          "type": "TextBlock",
+          "text": "@{concat('Start: ', convertFromUtc(items('Apply_to_each')?['startTime'], 'Mountain Standard Time', 'yyyy-MM-dd HH:mm:ss'), ' MT | End: ', convertFromUtc(items('Apply_to_each')?['endTime'], 'Mountain Standard Time', 'yyyy-MM-dd HH:mm:ss'), ' MT')}",
+          "isSubtle": true,
+          "size": "Small"
+        }
+      ]
+    },
+    {
+      "type": "Column",
+      "width": "auto",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "@{items('Apply_to_each')?['status']}",
+          "weight": "Bolder",
+          "color": "@{if(equals(items('Apply_to_each')?['status'], 'PASSED'), 'Good', 'Attention')}"
+        }
+      ]
+    }
+  ]
+}
