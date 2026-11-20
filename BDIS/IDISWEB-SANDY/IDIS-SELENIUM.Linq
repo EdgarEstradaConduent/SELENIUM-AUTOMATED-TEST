@@ -2112,7 +2112,6 @@ public class IdisTestRunner
         return env;
     }
 
-    private List<TestStepResult> _allSteps = new List<TestStepResult>();
     public List<TestStepResult> GetAllSteps() => _allSteps;
 }
 
