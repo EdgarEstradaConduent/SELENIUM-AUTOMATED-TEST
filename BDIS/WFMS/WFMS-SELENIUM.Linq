@@ -436,6 +436,7 @@ public class PowerAutomateReporter
             sb.Append("]}");
             var payload = sb.ToString();
             _logger.LogInfo("Power Automate payload: " + payload);
+            "Sending Power Automate webhook request...".Dump();
             using (var client = new HttpClient())
             {
                 if (!string.IsNullOrWhiteSpace(_config.WebhookProxyHost))
@@ -445,6 +446,7 @@ public class PowerAutomateReporter
                 var content = new StringContent(payload, Encoding.UTF8, "application/json");
                 var resp = client.PostAsync(_config.WebhookUrl, content).Result;
                 _logger.LogInfo("Power Automate response: " + (int)resp.StatusCode + " " + resp.ReasonPhrase);
+                $"Power Automate webhook response: {(int)resp.StatusCode} {resp.ReasonPhrase}".Dump();
             }
         }
         catch (Exception ex)
@@ -745,30 +747,37 @@ public class WfmsWorkflow
 {
     private readonly ConfigurationManager _config;
     private readonly SeleniumWaitHelper _wait;
+    private readonly Action<string> _progress;
 
-    public WfmsWorkflow(ConfigurationManager config, SeleniumWaitHelper wait)
+    public WfmsWorkflow(ConfigurationManager config, SeleniumWaitHelper wait, Action<string> progress)
     {
         _config = config;
         _wait = wait;
+        _progress = progress;
     }
 
     public void TestShipmentId(IWebDriver driver)
     {
+        _progress?.Invoke("Shipment ID: navigating to WFMS URL");
         driver.Navigate().GoToUrl(_config.TargetUrl);
         driver.Manage().Window.Size = new System.Drawing.Size(1140, 1070);
 
+        _progress?.Invoke("Shipment ID: entering auth token");
         var authToken = _wait.WaitVisible(By.Id("authToken"));
         authToken.Click();
         authToken.Clear();
         authToken.SendKeys(_config.AuthToken);
 
+        _progress?.Invoke("Shipment ID: entering shipment id " + _config.ShipmentId);
         var shipmentBox = _wait.WaitVisible(By.Id("ShipmentId"));
         shipmentBox.Click();
         shipmentBox.Clear();
         shipmentBox.SendKeys(_config.ShipmentId);
 
+        _progress?.Invoke("Shipment ID: clicking Button1 to load image");
         _wait.WaitClickable(By.Id("Button1")).Click();
 
+        _progress?.Invoke("Shipment ID: waiting 30s for image to load");
         Thread.Sleep(30000);
 
         _wait.WaitClickable(By.CssSelector(".fa-rotate-left")).Click();
@@ -782,12 +791,14 @@ public class WfmsWorkflow
         _wait.WaitClickable(By.CssSelector(".btn-group-vertical:nth-child(3) > .btn:nth-child(2)")).Click();
         _wait.WaitClickable(By.CssSelector(".fa-arrows-v")).Click();
 
+        _progress?.Invoke("waiting 10s before print window");
         Thread.Sleep(10000);
 
         // capture handles before the click that opens the print window
         var mainWindow = driver.CurrentWindowHandle;
         var existing = new HashSet<string>(driver.WindowHandles);
 
+        _progress?.Invoke("opening print window");
         _wait.WaitClickable(By.CssSelector(".btn-primary:nth-child(2)")).Click();
 
         var deadline = DateTime.UtcNow.AddSeconds(30);
@@ -811,21 +822,26 @@ public class WfmsWorkflow
 
     public void TestPackageId(IWebDriver driver)
     {
+        _progress?.Invoke("Package ID: navigating to WFMS URL");
         driver.Navigate().GoToUrl(_config.TargetUrl);
         driver.Manage().Window.Size = new System.Drawing.Size(1140, 1070);
 
+        _progress?.Invoke("Package ID: entering auth token");
         var authToken = _wait.WaitVisible(By.Id("authToken"));
         authToken.Click();
         authToken.Clear();
         authToken.SendKeys(_config.AuthToken);
 
+        _progress?.Invoke("Package ID: entering package id " + _config.PackageId);
         var packageBox = _wait.WaitVisible(By.Id("PackageIds"));
         packageBox.Click();
         packageBox.Clear();
         packageBox.SendKeys(_config.PackageId);
 
+        _progress?.Invoke("Package ID: clicking Button1 to load image");
         _wait.WaitClickable(By.Id("Button1")).Click();
 
+        _progress?.Invoke("Package ID: waiting 30s for image to load");
         Thread.Sleep(30000);
 
         _wait.WaitClickable(By.CssSelector(".fa-rotate-left")).Click();
@@ -839,12 +855,14 @@ public class WfmsWorkflow
         _wait.WaitClickable(By.CssSelector(".btn-group-vertical:nth-child(3) > .btn:nth-child(2)")).Click();
         _wait.WaitClickable(By.CssSelector(".fa-arrows-v")).Click();
 
+        _progress?.Invoke("waiting 10s before print window");
         Thread.Sleep(10000);
 
         // capture handles before the click that opens the print window
         var mainWindow = driver.CurrentWindowHandle;
         var existing = new HashSet<string>(driver.WindowHandles);
 
+        _progress?.Invoke("opening print window");
         _wait.WaitClickable(By.CssSelector(".btn-primary:nth-child(2)")).Click();
 
         var deadline = DateTime.UtcNow.AddSeconds(30);
@@ -899,7 +917,7 @@ public class WfmsTestRunner
             driver.Manage().Window.Size = new System.Drawing.Size(1140, 1070);
             wait = new SeleniumWaitHelper(driver, _config);
 
-            var workflow = new WfmsWorkflow(_config, wait);
+            var workflow = new WfmsWorkflow(_config, wait, _progress);
 
             RunStep(driver, "Shipment ID - Full Test", () => workflow.TestShipmentId(driver));
             RunStep(driver, "Package ID - Full Test", () => workflow.TestPackageId(driver));
@@ -931,6 +949,7 @@ public class WfmsTestRunner
         };
         try
         {
+            _progress?.Invoke($"F5 / {stepName}: starting");
             action();
             stepResult.Status = "PASSED";
             stepResult.Details = "Executed successfully.";
