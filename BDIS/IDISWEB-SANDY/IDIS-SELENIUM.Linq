@@ -1011,7 +1011,7 @@ public static class LegacyTests
         return null;
     }
 
-    static void AssignConfigVarsForRun()
+    public static void AssignConfigVarsForRun()
     {
         baseUrl = cfg["url"];
         usrName = cfg.TryGetValue("usrName", out var u) ? u : cfg["username"];
@@ -1032,7 +1032,7 @@ public static class LegacyTests
         district = cfg.TryGetValue("district", out var d) ? d : "";
     }
     // Legacy test methods (preserved from IDIS-SELENIUM.Linq original)
-    static void loginCase()
+    public static void loginCase()
         {
             try
             {
@@ -1067,7 +1067,7 @@ public static class LegacyTests
             }
         }
 
-        static void printButton()
+        public static void printButton()
         {
             try
             {
@@ -1088,7 +1088,7 @@ public static class LegacyTests
             }
         }
 
-        static void printToFile()
+        public static void printToFile()
         {
             try
             {
@@ -1107,7 +1107,7 @@ public static class LegacyTests
             }
         }
 
-        static void exportDate()
+        public static void exportDate()
         {
             try
             {
@@ -1155,7 +1155,7 @@ public static class LegacyTests
             }
         }
 
-        static void emailButton()
+        public static void emailButton()
         {
             try
             {
@@ -1177,7 +1177,7 @@ public static class LegacyTests
             }
         }
 
-        static void shipmentID()
+        public static void shipmentID()
         {
             try
             {
@@ -1199,7 +1199,7 @@ public static class LegacyTests
             }
         }
 
-        static void shipmentIDHistory()
+        public static void shipmentIDHistory()
         {
             try
             {
@@ -1221,7 +1221,7 @@ public static class LegacyTests
             }
         }
 
-        static void printFileViewer()
+        public static void printFileViewer()
         {
             try
             {
@@ -1240,7 +1240,7 @@ public static class LegacyTests
             }
         }
 
-        static void printAllPagesViewer()
+        public static void printAllPagesViewer()
         {
             try
             {
@@ -1259,7 +1259,7 @@ public static class LegacyTests
             }
         }
 
-        static void viewerFunction()
+        public static void viewerFunction()
         {
             try
             {
@@ -1285,7 +1285,7 @@ public static class LegacyTests
         }
 
 
-        static void addUser()
+        public static void addUser()
         {
             try
             {
@@ -1339,7 +1339,7 @@ public static class LegacyTests
             }
         }
 
-    static void modifyUser()
+    public static void modifyUser()
     {
         try
         {
@@ -1396,7 +1396,7 @@ public static class LegacyTests
         }
     }
 
-    static void deleteUser()
+    public static void deleteUser()
     {
         try
         {
@@ -1418,7 +1418,7 @@ public static class LegacyTests
         }
     }
 
-    static void updateProfile()
+    public static void updateProfile()
     {
         try
         {
@@ -1448,7 +1448,7 @@ public static class LegacyTests
     }
 
 
-     static void Mwab()
+     public static void Mwab()
     {
         try
         {
@@ -1479,7 +1479,7 @@ public static class LegacyTests
     } 
  
 
-    static void ImgSiteVolume()
+    public static void ImgSiteVolume()
     {
         try
         {
@@ -1536,7 +1536,7 @@ public static class LegacyTests
     }
 
 
-    static void ShipmentDetail()
+    public static void ShipmentDetail()
     {
         try
         {
@@ -1564,7 +1564,7 @@ public static class LegacyTests
         }
     }
 
-    static void PackageDetail()
+    public static void PackageDetail()
     {
         try
         {
@@ -1592,7 +1592,7 @@ public static class LegacyTests
         }
     }
 
-    static void KeyedNoDocsImg()
+    public static void KeyedNoDocsImg()
     {
         try
         {
@@ -1622,7 +1622,7 @@ public static class LegacyTests
         }
     }
 
-    static void DocsImgNotKeyed()
+    public static void DocsImgNotKeyed()
     {
         try
         {
@@ -1654,7 +1654,7 @@ public static class LegacyTests
         }
     }
 
-    static void OCRConfig()
+    public static void OCRConfig()
     {
         try
         {
@@ -1673,7 +1673,7 @@ public static class LegacyTests
     }
 
 
-    static void OCRReport()
+    public static void OCRReport()
     {
         try
         {
@@ -1710,7 +1710,7 @@ public static class LegacyTests
         }
     }
 
-    static void IDISSummary()
+    public static void IDISSummary()
     {
         try
         {
@@ -1764,7 +1764,7 @@ public static class LegacyTests
         }
     }
 
-    static void SuspendedSitesUT()
+    public static void SuspendedSitesUT()
     {
         try
         {
@@ -1795,7 +1795,7 @@ public static class LegacyTests
         }
     }
 
-    static void SuspendedSitesTX()
+    public static void SuspendedSitesTX()
     {
         try
         {
@@ -1826,7 +1826,7 @@ public static class LegacyTests
         }
     }
 
-    static void SitesNoImg()
+    public static void SitesNoImg()
     {
         try
         {
@@ -1872,7 +1872,7 @@ public static class LegacyTests
         }
     }
 
-    static void BuildingConfig()
+    public static void BuildingConfig()
     {
         try
         {
@@ -1904,7 +1904,7 @@ public static class LegacyTests
         }
     }
 
-    static void AutoClass()
+    public static void AutoClass()
     {
         try
         {
