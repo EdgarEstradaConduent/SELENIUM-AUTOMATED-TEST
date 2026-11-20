@@ -2022,13 +2022,13 @@ public class IdisTestRunner
         LegacyTests.district = _config.District;
 
         EdgeDriver driver = null;
-        SeleniumWaitHelper wait = null;
+        WebDriverWait wait = null;
         try
         {
             driver = _edgeMgr.CreateDriver(_logger);
             driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_config.PageLoadTimeoutSeconds);
             driver.Manage().Window.Size = new System.Drawing.Size(1400, 900);
-            wait = new SeleniumWaitHelper(driver, _config);
+            wait = new WebDriverWait(driver, TimeSpan.FromSeconds(_config.ElementTimeoutSeconds));
 
             LegacyTests.driver = driver;
             LegacyTests.wait = wait;
