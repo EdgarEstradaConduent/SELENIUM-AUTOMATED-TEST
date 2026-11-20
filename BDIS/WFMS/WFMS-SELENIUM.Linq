@@ -53,10 +53,20 @@ public class TestStepResult
     public string ScreenshotPath { get; set; }
 }
 
+public class EnvironmentTestResult
+{
+    public string WebKey { get; set; }
+    public string TargetUrl { get; set; }
+    public string Status { get; set; } = "PASSED";
+    public DateTimeOffset StartTime { get; set; }
+    public DateTimeOffset EndTime { get; set; }
+    public string ErrorMessage { get; set; } = "";
+}
+
 public class RunSummary
 {
     public string GlobalStatus { get; set; } = "PASSED";
-    public List<TestStepResult> Steps { get; set; } = new List<TestStepResult>();
+    public List<EnvironmentTestResult> Environments { get; set; } = new List<EnvironmentTestResult>();
 }
 
 public class ConfigurationException : Exception
@@ -423,14 +433,17 @@ public class PowerAutomateReporter
             sb.Append("\"user\":\"" + JsonHelper.Escape(user) + "\",");
             sb.Append("\"globalStatus\":\"" + JsonHelper.Escape(summary.GlobalStatus) + "\",");
             sb.Append("\"results\":[");
-            for (int i = 0; i < summary.Steps.Count; i++)
+            for (int i = 0; i < summary.Environments.Count; i++)
             {
-                var s = summary.Steps[i];
+                var e = summary.Environments[i];
                 if (i > 0) sb.Append(",");
                 sb.Append("{");
-                sb.Append("\"stepName\":\"" + JsonHelper.Escape(s.StepName) + "\",");
-                sb.Append("\"status\":\"" + JsonHelper.Escape(s.Status) + "\",");
-                sb.Append("\"details\":\"" + JsonHelper.Escape(s.Details) + "\"");
+                sb.Append("\"webKey\":\"" + JsonHelper.Escape(e.WebKey) + "\",");
+                sb.Append("\"targetUrl\":\"" + JsonHelper.Escape(e.TargetUrl) + "\",");
+                sb.Append("\"status\":\"" + JsonHelper.Escape(e.Status) + "\",");
+                sb.Append("\"startTime\":\"" + e.StartTime.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss'Z'") + "\",");
+                sb.Append("\"endTime\":\"" + e.EndTime.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss'Z'") + "\",");
+                sb.Append("\"error\":\"" + JsonHelper.Escape(e.ErrorMessage) + "\"");
                 sb.Append("}");
             }
             sb.Append("]}");
@@ -908,6 +921,14 @@ public class WfmsTestRunner
         var summary = new RunSummary();
         var url = _config.TargetUrl;
 
+        var env = new EnvironmentTestResult
+        {
+            WebKey = "F5",
+            TargetUrl = url,
+            StartTime = DateTimeOffset.Now,
+            Status = "PASSED"
+        };
+
         EdgeDriver driver = null;
         SeleniumWaitHelper wait = null;
         try
@@ -929,14 +950,23 @@ public class WfmsTestRunner
         catch (Exception ex)
         {
             _logger.LogError("WFMS run", ex);
+            env.Status = "FAILED";
+            env.ErrorMessage = _config.Redactor.Redact(ex.Message);
         }
         finally
         {
             try { driver?.Quit(); } catch { }
         }
 
-        summary.GlobalStatus = _allSteps.Any(s => s.Status == "FAILED") ? "FAILED" : "PASSED";
-        summary.Steps = _allSteps;
+        if (_allSteps.Any(s => s.Status == "FAILED"))
+        {
+            env.Status = "FAILED";
+            var failed = _allSteps.Where(s => s.Status == "FAILED").Select(s => s.StepName + ": " + s.Details);
+            env.ErrorMessage = _config.Redactor.Redact(string.Join(" | ", failed));
+        }
+        env.EndTime = DateTimeOffset.Now;
+        summary.Environments.Add(env);
+        summary.GlobalStatus = env.Status;
         return summary;
     }
 
